@@ -37,8 +37,23 @@ from typing import Dict, Any, Optional
 
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from multiple possible locations
+def _load_env():
+    """Load .env from current dir, script dir, or home dir."""
+    from pathlib import Path
+
+    locations = [
+        Path.cwd() / ".env",  # Current directory
+        Path(__file__).parent.parent / ".env",  # Package root
+        Path.home() / ".canvas-mcp.env",  # Home directory
+    ]
+
+    for env_file in locations:
+        if env_file.exists():
+            load_dotenv(env_file, override=True)
+            return
+
+_load_env()
 
 from .client import get_canvas_client
 from .pages import list_pages, get_page, create_page, update_page
@@ -129,7 +144,8 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
     try:
         client = get_canvas_client()
-        pages = list_pages(course_id, client)
+        course = client.get_course(course_id)  # Fetch once and reuse
+        pages = list_pages(course_id, client, course=course)
     except Exception as e:
         print(f"Error fetching pages: {e}")
         return 1
@@ -147,7 +163,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
         try:
             # Get full page content
-            page = get_page(course_id, url, as_markdown=True, client=client)
+            page = get_page(course_id, url, as_markdown=True, client=client, course=course)
 
             # Check if local file exists and has same page_id
             if file_path.exists() and not args.force:
@@ -204,7 +220,8 @@ def cmd_push(args: argparse.Namespace) -> int:
     # Get existing Canvas pages
     try:
         client = get_canvas_client()
-        canvas_pages = {p["url"]: p for p in list_pages(course_id, client)}
+        course = client.get_course(course_id)  # Fetch once and reuse
+        canvas_pages = {p["url"]: p for p in list_pages(course_id, client, course=course)}
     except Exception as e:
         print(f"Error fetching Canvas pages: {e}")
         return 1
@@ -250,13 +267,14 @@ def cmd_push(args: argparse.Namespace) -> int:
                         from_markdown=True,
                         published=published,
                         client=client,
+                        course=course,
                     )
                     print(f"  ↑ {file_path.name} (updated)")
                     updated += 1
 
                     # Update local frontmatter with latest info
                     if not args.no_update_meta:
-                        page = get_page(course_id, url, as_markdown=False, client=client)
+                        page = get_page(course_id, url, as_markdown=False, client=client, course=course)
                         metadata["updated_at"] = page.get("updated_at", "")
                         new_content = generate_frontmatter(metadata) + body
                         file_path.write_text(new_content, encoding="utf-8")
@@ -272,6 +290,7 @@ def cmd_push(args: argparse.Namespace) -> int:
                         from_markdown=True,
                         published=published,
                         client=client,
+                        course=course,
                     )
                     print(f"  + {file_path.name} (created)")
                     created += 1

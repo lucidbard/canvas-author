@@ -15,19 +15,21 @@ from .exceptions import ResourceNotFoundError, APIError
 logger = logging.getLogger("canvas_mcp.pages")
 
 
-def list_pages(course_id: str, client: Optional[CanvasClient] = None) -> List[Dict[str, Any]]:
+def list_pages(course_id: str, client: Optional[CanvasClient] = None, course=None) -> List[Dict[str, Any]]:
     """
     List all wiki pages in a course.
 
     Args:
         course_id: Canvas course ID
         client: Optional CanvasClient instance
+        course: Optional cached course object to avoid redundant API calls
 
     Returns:
         List of page metadata dicts with keys: url, title, created_at, updated_at, published
     """
-    canvas = client or get_canvas_client()
-    course = canvas.get_course(course_id)
+    if course is None:
+        canvas = client or get_canvas_client()
+        course = canvas.get_course(course_id)
     pages = course.get_pages()
 
     result = []
@@ -49,7 +51,8 @@ def get_page(
     course_id: str,
     page_url: str,
     as_markdown: bool = True,
-    client: Optional[CanvasClient] = None
+    client: Optional[CanvasClient] = None,
+    course=None
 ) -> Dict[str, Any]:
     """
     Get a wiki page by URL.
@@ -59,12 +62,14 @@ def get_page(
         page_url: Page URL slug (e.g., 'syllabus' or 'week-1-notes')
         as_markdown: If True, convert HTML body to markdown
         client: Optional CanvasClient instance
+        course: Optional cached course object to avoid redundant API calls
 
     Returns:
         Page data dict with keys: url, title, body, created_at, updated_at, published
     """
-    canvas = client or get_canvas_client()
-    course = canvas.get_course(course_id)
+    if course is None:
+        canvas = client or get_canvas_client()
+        course = canvas.get_course(course_id)
 
     try:
         page = course.get_page(page_url)
@@ -95,7 +100,8 @@ def create_page(
     published: bool = True,
     front_page: bool = False,
     editing_roles: str = "teachers",
-    client: Optional[CanvasClient] = None
+    client: Optional[CanvasClient] = None,
+    course=None
 ) -> Dict[str, Any]:
     """
     Create a new wiki page.
@@ -109,12 +115,14 @@ def create_page(
         front_page: Whether to set as front page
         editing_roles: Who can edit ('teachers', 'students', 'members', 'public')
         client: Optional CanvasClient instance
+        course: Optional cached course object to avoid redundant API calls
 
     Returns:
         Created page data
     """
-    canvas = client or get_canvas_client()
-    course = canvas.get_course(course_id)
+    if course is None:
+        canvas = client or get_canvas_client()
+        course = canvas.get_course(course_id)
 
     if from_markdown and body:
         body = markdown_to_html(body)
@@ -147,7 +155,8 @@ def update_page(
     from_markdown: bool = True,
     published: Optional[bool] = None,
     front_page: Optional[bool] = None,
-    client: Optional[CanvasClient] = None
+    client: Optional[CanvasClient] = None,
+    course=None
 ) -> Dict[str, Any]:
     """
     Update an existing wiki page.
@@ -161,12 +170,14 @@ def update_page(
         published: Whether to publish the page (optional)
         front_page: Whether to set as front page (optional)
         client: Optional CanvasClient instance
+        course: Optional cached course object to avoid redundant API calls
 
     Returns:
         Updated page data
     """
-    canvas = client or get_canvas_client()
-    course = canvas.get_course(course_id)
+    if course is None:
+        canvas = client or get_canvas_client()
+        course = canvas.get_course(course_id)
 
     try:
         page = course.get_page(page_url)
@@ -202,7 +213,8 @@ def update_page(
 def delete_page(
     course_id: str,
     page_url: str,
-    client: Optional[CanvasClient] = None
+    client: Optional[CanvasClient] = None,
+    course=None
 ) -> bool:
     """
     Delete a wiki page.
@@ -211,12 +223,14 @@ def delete_page(
         course_id: Canvas course ID
         page_url: Page URL slug
         client: Optional CanvasClient instance
+        course: Optional cached course object to avoid redundant API calls
 
     Returns:
         True if deleted successfully
     """
-    canvas = client or get_canvas_client()
-    course = canvas.get_course(course_id)
+    if course is None:
+        canvas = client or get_canvas_client()
+        course = canvas.get_course(course_id)
 
     try:
         page = course.get_page(page_url)
