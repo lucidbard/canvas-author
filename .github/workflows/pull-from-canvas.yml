@@ -1,0 +1,62 @@
+# Pull Canvas wiki pages to repository on schedule
+#
+# This workflow pulls the latest wiki pages from Canvas to keep the repository
+# in sync with any changes made directly in Canvas.
+#
+# Required secrets:
+#   CANVAS_API_TOKEN - Your Canvas API token
+#   CANVAS_DOMAIN    - Your Canvas domain (e.g., canvas.instructure.com)
+
+name: Pull from Canvas
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+
+      - name: Install canvas-mcp
+        run: pip install -e .
+
+      - name: Pull from Canvas
+        env:
+          CANVAS_API_TOKEN: ${{ secrets.CANVAS_API_TOKEN }}
+          CANVAS_DOMAIN: ${{ secrets.CANVAS_DOMAIN }}
+        run: |
+          # Find all course directories and pull each one
+          for course_dir in courses/*/; do
+            if [ -f "${course_dir}.canvas.json" ]; then
+              echo "Pulling ${course_dir}..."
+              canvas-mcp pull --dir "${course_dir}" --force
+            fi
+          done
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Sync wiki pages from Canvas"
+          title: "📚 Canvas Wiki Sync"
+          body: |
+            This PR updates local markdown files with the latest content from Canvas.
+
+            Review the changes to ensure no local edits are being overwritten.
+          branch: canvas-sync
+          delete-branch: true
+          labels: documentation, automated

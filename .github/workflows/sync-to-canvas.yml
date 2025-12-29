@@ -1,0 +1,69 @@
+# Sync local markdown files to Canvas when pushed
+#
+# This workflow pushes changes to Canvas wiki pages whenever markdown files
+# are modified in the repository.
+#
+# Required secrets:
+#   CANVAS_API_TOKEN - Your Canvas API token
+#   CANVAS_DOMAIN    - Your Canvas domain (e.g., canvas.instructure.com)
+#
+# Repository structure:
+#   courses/
+#   ├── course-123/
+#   │   ├── .canvas.json
+#   │   └── *.md
+#   └── course-456/
+#       ├── .canvas.json
+#       └── *.md
+
+name: Sync to Canvas
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'courses/**/*.md'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+
+      - name: Install canvas-mcp
+        run: |
+          pip install -e .
+          # Or from PyPI when published:
+          # pip install canvas-mcp
+
+      - name: Push changes to Canvas
+        env:
+          CANVAS_API_TOKEN: ${{ secrets.CANVAS_API_TOKEN }}
+          CANVAS_DOMAIN: ${{ secrets.CANVAS_DOMAIN }}
+        run: |
+          # Find all course directories and push each one
+          for course_dir in courses/*/; do
+            if [ -f "${course_dir}.canvas.json" ]; then
+              echo "Pushing ${course_dir}..."
+              canvas-mcp push --dir "${course_dir}"
+            fi
+          done
+
+      - name: Commit updated metadata
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          git diff --staged --quiet || git commit -m "Update Canvas page metadata [skip ci]"
+          git push

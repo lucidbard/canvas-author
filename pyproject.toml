@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canvas-mcp"
+version = "0.1.0"
+description = "Canvas LMS MCP server for managing wiki pages, assignments, discussions, and rubrics with markdown support"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "John"}
+]
+keywords = ["canvas", "lms", "mcp", "model-context-protocol", "markdown", "pandoc"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "canvasapi>=3.0.0",
+    "mcp>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "PyYAML>=6.0",
+    "premailer>=3.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "responses>=0.23.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+markers = [
+    "e2e: End-to-end tests against real Canvas instance (require E2E_CANVAS_* env vars)",
+    "slow: Slow-running tests",
+]
+
+[tool.coverage.run]
+source = ["canvas_mcp"]
+omit = ["canvas_mcp/server.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
+
+[project.scripts]
+canvas-mcp = "canvas_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/canvas-mcp"
+Repository = "https://github.com/yourusername/canvas-mcp"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["canvas_mcp*"]
