@@ -46,9 +46,10 @@ htmlcov/
 .env.e2e
 .env*.local
 
-# Canvas config (may contain course-specific info)
-# Keep .canvas.json for documentation purposes but ignore in courses/
-courses/**/.canvas.json
+# Canvas course content (pulled from Canvas LMS)
+# Ignore all course directories and config files
+courses/
+.canvas.json
 
 # OS files
 .DS_Store
