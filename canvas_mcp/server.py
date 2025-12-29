@@ -11,7 +11,7 @@ from typing import Optional
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, discussions, rubrics, sync
+from . import pages, assignments, discussions, rubrics, sync, quizzes, quiz_sync
 from .pandoc import is_pandoc_available
 
 logger = logging.getLogger("canvas_mcp.server")
@@ -463,6 +463,139 @@ async def update_rubric(
 
 
 # =============================================================================
+# Quiz Tools
+# =============================================================================
+
+@mcp.tool()
+def list_quizzes(course_id: str) -> str:
+    """
+    List all quizzes in a Canvas course.
+
+    Args:
+        course_id: Canvas course ID
+
+    Returns:
+        JSON list of quizzes with id, title, points_possible, published
+    """
+    try:
+        result = quizzes.list_quizzes(course_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_quiz(course_id: str, quiz_id: str) -> str:
+    """
+    Get details for a specific quiz.
+
+    Args:
+        course_id: Canvas course ID
+        quiz_id: Canvas quiz ID
+
+    Returns:
+        JSON with quiz details including settings and question count
+    """
+    try:
+        result = quizzes.get_quiz(course_id, quiz_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_quiz_questions(course_id: str, quiz_id: str) -> str:
+    """
+    Get all questions for a quiz.
+
+    Args:
+        course_id: Canvas course ID
+        quiz_id: Canvas quiz ID
+
+    Returns:
+        JSON list of questions with type, text, answers, and points
+    """
+    try:
+        result = quizzes.get_quiz_questions(course_id, quiz_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def pull_quizzes(
+    course_id: str,
+    output_dir: str,
+    overwrite: bool = False
+) -> str:
+    """
+    Pull all quizzes from Canvas and save as local markdown files.
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save quiz markdown files
+        overwrite: Overwrite existing files (default: false)
+
+    Returns:
+        JSON with results: pulled, skipped, errors
+    """
+    try:
+        result = quiz_sync.pull_quizzes(course_id, output_dir, overwrite=overwrite)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_quizzes(
+    course_id: str,
+    input_dir: str,
+    create_missing: bool = True,
+    update_existing: bool = True
+) -> str:
+    """
+    Push local quiz markdown files to Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        input_dir: Directory containing quiz markdown files (*.quiz.md)
+        create_missing: Create quizzes that don't exist on Canvas (default: true)
+        update_existing: Update quizzes that already exist (default: true)
+
+    Returns:
+        JSON with results: created, updated, skipped, errors
+    """
+    try:
+        result = quiz_sync.push_quizzes(
+            course_id, input_dir,
+            create_missing=create_missing,
+            update_existing=update_existing
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def quiz_sync_status(course_id: str, local_dir: str) -> str:
+    """
+    Check sync status between Canvas quizzes and local files.
+
+    Args:
+        course_id: Canvas course ID
+        local_dir: Directory containing local quiz files
+
+    Returns:
+        JSON with status: canvas_only, local_only, synced, summary
+    """
+    try:
+        result = quiz_sync.quiz_sync_status(course_id, local_dir)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
 # Utility Tools
 # =============================================================================
 
@@ -486,6 +619,8 @@ def main():
     print("Starting Canvas MCP Server...")
     print("Tools: list_pages, get_page, create_page, update_page, delete_page,")
     print("       pull_pages, push_pages, sync_status,")
+    print("       list_quizzes, get_quiz, get_quiz_questions,")
+    print("       pull_quizzes, push_quizzes, quiz_sync_status,")
     print("       list_courses, list_assignments, get_assignment, list_submissions,")
     print("       list_discussions, get_discussion_posts,")
     print("       get_rubric, update_rubric")

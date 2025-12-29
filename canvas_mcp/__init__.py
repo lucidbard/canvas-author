@@ -29,6 +29,17 @@ from .styling import (
     get_preset_names,
     get_preset_css,
 )
+from .quiz_format import (
+    parse_quiz_markdown,
+    generate_quiz_markdown,
+    Question,
+    Answer,
+)
+from .quiz_sync import (
+    pull_quizzes,
+    push_quizzes,
+    quiz_sync_status,
+)
 
 __all__ = [
     # Client
@@ -58,4 +69,12 @@ __all__ = [
     "PandocError",
     "SyncError",
     "FileOperationError",
+    # Quiz
+    "parse_quiz_markdown",
+    "generate_quiz_markdown",
+    "Question",
+    "Answer",
+    "pull_quizzes",
+    "push_quizzes",
+    "quiz_sync_status",
 ]

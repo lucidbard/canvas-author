@@ -45,6 +45,7 @@ from .pages import list_pages, get_page, create_page, update_page
 from .pandoc import is_pandoc_available
 from .assignments import list_courses
 from .frontmatter import parse_frontmatter, generate_frontmatter
+from . import quiz_sync, quizzes
 
 # Config filename
 CONFIG_FILE = ".canvas.json"
@@ -384,6 +385,184 @@ def cmd_list_courses(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pull_quizzes(args: argparse.Namespace) -> int:
+    """Pull quizzes from Canvas to local markdown files."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Create quizzes subdirectory
+    quiz_dir = directory / "quizzes"
+    quiz_dir.mkdir(exist_ok=True)
+
+    print(f"Pulling quizzes from course: {config.get('course_name', course_id)}")
+
+    try:
+        result = quiz_sync.pull_quizzes(course_id, str(quiz_dir), overwrite=args.force)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    for item in result.get("pulled", []):
+        print(f"  ✓ {item['file']} ({item['question_count']} questions)")
+
+    for item in result.get("skipped", []):
+        print(f"  - {item['file']}: skipped ({item.get('reason', 'exists')})")
+
+    for item in result.get("errors", []):
+        print(f"  ✗ {item.get('title', 'unknown')}: {item['error']}")
+
+    pulled = len(result.get("pulled", []))
+    skipped = len(result.get("skipped", []))
+    errors = len(result.get("errors", []))
+
+    print(f"\nPulled: {pulled}, Skipped: {skipped}, Errors: {errors}")
+    return 0 if errors == 0 else 1
+
+
+def cmd_push_quizzes(args: argparse.Namespace) -> int:
+    """Push local quiz markdown files to Canvas."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Use quizzes subdirectory
+    quiz_dir = directory / "quizzes"
+    if not quiz_dir.exists():
+        print(f"Error: No quizzes directory found at {quiz_dir}")
+        return 1
+
+    print(f"Pushing quizzes to course: {config.get('course_name', course_id)}")
+
+    try:
+        result = quiz_sync.push_quizzes(
+            course_id,
+            str(quiz_dir),
+            create_missing=not args.update_only,
+            update_existing=not args.create_only,
+        )
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    for item in result.get("created", []):
+        print(f"  + {item['file']} (created, id={item['quiz_id']})")
+
+    for item in result.get("updated", []):
+        print(f"  ↑ {item['file']} (updated)")
+
+    for item in result.get("skipped", []):
+        print(f"  - {item['file']}: skipped ({item.get('reason', '')})")
+
+    for item in result.get("errors", []):
+        print(f"  ✗ {item['file']}: {item['error']}")
+
+    created = len(result.get("created", []))
+    updated = len(result.get("updated", []))
+    skipped = len(result.get("skipped", []))
+    errors = len(result.get("errors", []))
+
+    print(f"\nCreated: {created}, Updated: {updated}, Skipped: {skipped}, Errors: {errors}")
+    return 0 if errors == 0 else 1
+
+
+def cmd_quiz_status(args: argparse.Namespace) -> int:
+    """Show sync status for quizzes."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    quiz_dir = directory / "quizzes"
+
+    print(f"Course: {config.get('course_name', course_id)} ({course_id})")
+    print(f"Quiz directory: {quiz_dir}\n")
+
+    if not quiz_dir.exists():
+        print("No local quizzes directory found")
+        quiz_dir.mkdir(exist_ok=True)
+
+    try:
+        status = quiz_sync.quiz_sync_status(course_id, str(quiz_dir))
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    synced = status.get("synced", [])
+    canvas_only = status.get("canvas_only", [])
+    local_only = status.get("local_only", [])
+
+    print(f"Synced ({len(synced)}):")
+    for item in synced:
+        print(f"  ✓ {item['file']}")
+
+    if canvas_only:
+        print(f"\nCanvas only ({len(canvas_only)}) - run 'pull-quizzes' to download:")
+        for item in canvas_only:
+            print(f"  ↓ {item['title']}")
+
+    if local_only:
+        print(f"\nLocal only ({len(local_only)}) - run 'push-quizzes' to upload:")
+        for item in local_only:
+            print(f"  ↑ {item['file']}")
+
+    summary = status.get("summary", {})
+    print(f"\nSummary: {summary.get('synced_count', 0)} synced, "
+          f"{summary.get('canvas_only_count', 0)} canvas-only, "
+          f"{summary.get('local_only_count', 0)} local-only")
+    return 0
+
+
+def cmd_list_quizzes(args: argparse.Namespace) -> int:
+    """List quizzes in a course."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    try:
+        quiz_list = quizzes.list_quizzes(course_id)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    print(f"Quizzes in course: {config.get('course_name', course_id)}\n")
+
+    if not quiz_list:
+        print("No quizzes found")
+        return 0
+
+    for q in quiz_list:
+        status = "✓" if q.get("published") else "○"
+        points = q.get("points_possible") or 0
+        questions = q.get("question_count", 0)
+        print(f"  {status} [{q['id']:>8}] {q['title']}")
+        print(f"              {questions} questions, {points} pts")
+
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -423,6 +602,25 @@ def main() -> int:
     # server command (for MCP)
     server_parser = subparsers.add_parser("server", help="Run MCP server")
 
+    # pull-quizzes command
+    pull_quizzes_parser = subparsers.add_parser("pull-quizzes", help="Pull quizzes from Canvas")
+    pull_quizzes_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    pull_quizzes_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+
+    # push-quizzes command
+    push_quizzes_parser = subparsers.add_parser("push-quizzes", help="Push quizzes to Canvas")
+    push_quizzes_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_quizzes_parser.add_argument("--create-only", action="store_true", help="Only create new quizzes")
+    push_quizzes_parser.add_argument("--update-only", action="store_true", help="Only update existing quizzes")
+
+    # quiz-status command
+    quiz_status_parser = subparsers.add_parser("quiz-status", help="Show quiz sync status")
+    quiz_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
+    # list-quizzes command
+    list_quizzes_parser = subparsers.add_parser("list-quizzes", help="List quizzes in course")
+    list_quizzes_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -443,6 +641,14 @@ def main() -> int:
         from .server import main as server_main
         server_main()
         return 0
+    elif args.command == "pull-quizzes":
+        return cmd_pull_quizzes(args)
+    elif args.command == "push-quizzes":
+        return cmd_push_quizzes(args)
+    elif args.command == "quiz-status":
+        return cmd_quiz_status(args)
+    elif args.command == "list-quizzes":
+        return cmd_list_quizzes(args)
 
     return 0
 
