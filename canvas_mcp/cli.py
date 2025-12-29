@@ -39,14 +39,26 @@ from dotenv import load_dotenv
 
 # Load environment variables from multiple possible locations
 def _load_env():
-    """Load .env from current dir, script dir, or home dir."""
+    """Load .env from current dir, parent dirs, script dir, or home dir."""
     from pathlib import Path
 
     locations = [
         Path.cwd() / ".env",  # Current directory
+    ]
+
+    # Search up directory tree for .env
+    current = Path.cwd()
+    for _ in range(10):  # Limit to 10 levels up
+        parent = current.parent
+        if parent == current:
+            break
+        locations.append(parent / ".env")
+        current = parent
+
+    locations.extend([
         Path(__file__).parent.parent / ".env",  # Package root
         Path.home() / ".canvas-mcp.env",  # Home directory
-    ]
+    ])
 
     for env_file in locations:
         if env_file.exists():
@@ -60,7 +72,7 @@ from .pages import list_pages, get_page, create_page, update_page
 from .pandoc import is_pandoc_available
 from .assignments import list_courses
 from .frontmatter import parse_frontmatter, generate_frontmatter
-from . import quiz_sync, quizzes
+from . import quiz_sync, quizzes, module_sync
 
 # Config filename
 CONFIG_FILE = ".canvas.json"
@@ -226,8 +238,10 @@ def cmd_push(args: argparse.Namespace) -> int:
         print(f"Error fetching Canvas pages: {e}")
         return 1
 
-    # Find local markdown files
-    md_files = list(directory.glob("*.md"))
+    # Find local markdown files (recursive)
+    md_files = list(directory.rglob("*.md"))
+    # Exclude modules.yaml-related files and hidden directories
+    md_files = [f for f in md_files if not any(p.startswith('.') for p in f.relative_to(directory).parts)]
     if not md_files:
         print("No markdown files found in directory")
         return 0
@@ -240,12 +254,13 @@ def cmd_push(args: argparse.Namespace) -> int:
     errors = 0
 
     for file_path in sorted(md_files):
+        relative_path = file_path.relative_to(directory)
         try:
             content = file_path.read_text(encoding="utf-8")
             metadata, body = parse_frontmatter(content)
 
             if not body.strip():
-                print(f"  - {file_path.name}: empty, skipping")
+                print(f"  - {relative_path}: empty, skipping")
                 skipped += 1
                 continue
 
@@ -269,7 +284,7 @@ def cmd_push(args: argparse.Namespace) -> int:
                         client=client,
                         course=course,
                     )
-                    print(f"  ↑ {file_path.name} (updated)")
+                    print(f"  ↑ {relative_path} (updated)")
                     updated += 1
 
                     # Update local frontmatter with latest info
@@ -292,7 +307,7 @@ def cmd_push(args: argparse.Namespace) -> int:
                         client=client,
                         course=course,
                     )
-                    print(f"  + {file_path.name} (created)")
+                    print(f"  + {relative_path} (created)")
                     created += 1
 
                     # Update local frontmatter with page_id
@@ -302,11 +317,11 @@ def cmd_push(args: argparse.Namespace) -> int:
                     new_content = generate_frontmatter(metadata) + body
                     file_path.write_text(new_content, encoding="utf-8")
                 else:
-                    print(f"  - {file_path.name}: not on Canvas, skipping (--update-only)")
+                    print(f"  - {relative_path}: not on Canvas, skipping (--update-only)")
                     skipped += 1
 
         except Exception as e:
-            print(f"  ✗ {file_path.name}: {e}")
+            print(f"  ✗ {relative_path}: {e}")
             errors += 1
 
     print(f"\nCreated: {created}, Updated: {updated}, Skipped: {skipped}, Errors: {errors}")
@@ -582,6 +597,126 @@ def cmd_list_quizzes(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pull_modules(args: argparse.Namespace) -> int:
+    """Pull modules from Canvas to modules.yaml."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    print(f"Pulling modules from course: {config.get('course_name', course_id)}")
+
+    try:
+        result = module_sync.pull_modules(course_id, str(directory))
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    print(f"  ✓ Pulled {result['modules_count']} modules ({result['items_count']} items)")
+    print(f"  → Saved to {result['file']}")
+
+    return 0
+
+
+def cmd_push_modules(args: argparse.Namespace) -> int:
+    """Push modules.yaml to Canvas."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    print(f"Pushing modules to course: {config.get('course_name', course_id)}")
+
+    try:
+        result = module_sync.push_modules(
+            course_id, str(directory),
+            delete_missing=args.delete_missing
+        )
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        return 1
+
+    for item in result.get("created", []):
+        print(f"  + {item['name']} (created)")
+
+    for item in result.get("updated", []):
+        print(f"  ↑ {item['name']} (updated)")
+
+    for item in result.get("deleted", []):
+        print(f"  - {item['name']} (deleted)")
+
+    for item in result.get("errors", []):
+        print(f"  ✗ {item.get('name', 'unknown')}: {item['error']}")
+
+    created = len(result.get("created", []))
+    updated = len(result.get("updated", []))
+    deleted = len(result.get("deleted", []))
+    errors = len(result.get("errors", []))
+
+    print(f"\nCreated: {created}, Updated: {updated}, Deleted: {deleted}, Errors: {errors}")
+    return 0 if errors == 0 else 1
+
+
+def cmd_module_status(args: argparse.Namespace) -> int:
+    """Show module sync status."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    print(f"Course: {config.get('course_name', course_id)} ({course_id})")
+    print(f"Directory: {directory}\n")
+
+    try:
+        status = module_sync.module_sync_status(course_id, str(directory))
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    synced = status.get("synced", [])
+    canvas_only = status.get("canvas_only", [])
+    local_only = status.get("local_only", [])
+
+    print(f"Synced ({len(synced)}):")
+    for item in synced:
+        print(f"  ✓ {item['name']}")
+
+    if canvas_only:
+        print(f"\nCanvas only ({len(canvas_only)}) - run 'pull-modules' to download:")
+        for item in canvas_only:
+            print(f"  ↓ {item['name']}")
+
+    if local_only:
+        print(f"\nLocal only ({len(local_only)}) - run 'push-modules' to upload:")
+        for item in local_only:
+            print(f"  ↑ {item['name']}")
+
+    summary = status.get("summary", {})
+    print(f"\nSummary: {summary.get('synced_count', 0)} synced, "
+          f"{summary.get('canvas_only_count', 0)} canvas-only, "
+          f"{summary.get('local_only_count', 0)} local-only")
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -640,6 +775,19 @@ def main() -> int:
     list_quizzes_parser = subparsers.add_parser("list-quizzes", help="List quizzes in course")
     list_quizzes_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
 
+    # pull-modules command
+    pull_modules_parser = subparsers.add_parser("pull-modules", help="Pull modules from Canvas")
+    pull_modules_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
+    # push-modules command
+    push_modules_parser = subparsers.add_parser("push-modules", help="Push modules to Canvas")
+    push_modules_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_modules_parser.add_argument("--delete-missing", action="store_true", help="Delete Canvas modules not in local file")
+
+    # module-status command
+    module_status_parser = subparsers.add_parser("module-status", help="Show module sync status")
+    module_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -668,6 +816,12 @@ def main() -> int:
         return cmd_quiz_status(args)
     elif args.command == "list-quizzes":
         return cmd_list_quizzes(args)
+    elif args.command == "pull-modules":
+        return cmd_pull_modules(args)
+    elif args.command == "push-modules":
+        return cmd_push_modules(args)
+    elif args.command == "module-status":
+        return cmd_module_status(args)
 
     return 0
 
