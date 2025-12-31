@@ -72,7 +72,7 @@ from .pages import list_pages, get_page, create_page, update_page
 from .pandoc import is_pandoc_available
 from .assignments import list_courses
 from .frontmatter import parse_frontmatter, generate_frontmatter
-from . import quiz_sync, quizzes, module_sync
+from . import quiz_sync, quizzes, module_sync, course_sync
 
 # Config filename
 CONFIG_FILE = ".canvas.json"
@@ -197,7 +197,11 @@ def cmd_pull(args: argparse.Namespace) -> int:
                 "updated_at": page.get("updated_at", ""),
             }
 
-            content = generate_frontmatter(metadata) + page["body"]
+            # Transform Canvas links to local markdown links
+            body = page["body"]
+            body = course_sync.transform_links_to_local(body, course_id, client.domain)
+
+            content = generate_frontmatter(metadata) + body
 
             # Write file
             file_path.write_text(content, encoding="utf-8")
@@ -271,6 +275,9 @@ def cmd_push(args: argparse.Namespace) -> int:
             if isinstance(published, str):
                 published = published.lower() == "true"
 
+            # Transform local links to Canvas links
+            body_for_canvas = course_sync.transform_links_to_canvas(body, course_id, client.domain)
+
             if url in canvas_pages:
                 # Update existing page
                 if not args.create_only:
@@ -278,7 +285,7 @@ def cmd_push(args: argparse.Namespace) -> int:
                         course_id=course_id,
                         page_url=url,
                         title=title,
-                        body=body,
+                        body=body_for_canvas,
                         from_markdown=True,
                         published=published,
                         client=client,
@@ -301,7 +308,7 @@ def cmd_push(args: argparse.Namespace) -> int:
                     result = create_page(
                         course_id=course_id,
                         title=title,
-                        body=body,
+                        body=body_for_canvas,
                         from_markdown=True,
                         published=published,
                         client=client,
@@ -671,6 +678,138 @@ def cmd_push_modules(args: argparse.Namespace) -> int:
     return 0 if errors == 0 else 1
 
 
+def cmd_pull_course(args: argparse.Namespace) -> int:
+    """Pull course settings from Canvas to course.yaml."""
+    directory = Path(args.dir).resolve()
+
+    # Load config to get course_id
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    print(f"Pulling course settings from: {config.get('course_name', course_id)}")
+
+    try:
+        result = course_sync.pull_course(course_id, str(directory))
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    print(f"  ✓ Pulled {result['settings_count']} settings to {result['file']}")
+
+    conflicts = result.get("conflicts", [])
+    if conflicts:
+        print(f"\n⚠ {len(conflicts)} conflicts detected (Canvas values used):")
+        for c in conflicts:
+            print(f"  {c['field']}:")
+            print(f"    Local:  {c['local']}")
+            print(f"    Canvas: {c['canvas']}")
+
+    return 0
+
+
+def cmd_push_course(args: argparse.Namespace) -> int:
+    """Push course.yaml settings to Canvas."""
+    directory = Path(args.dir).resolve()
+
+    print(f"Pushing course settings from {directory}")
+
+    try:
+        # First do a dry run to show what would change
+        if not args.yes:
+            result = course_sync.push_course(str(directory), dry_run=True)
+
+            if "error" in result:
+                print(f"Error: {result['error']}")
+                return 1
+
+            changes = result.get("changes", [])
+            if not changes:
+                print("No changes to push")
+                return 0
+
+            print(f"Changes to be pushed ({len(changes)}):")
+            for c in changes:
+                print(f"  {c['field']}: {c['from']} → {c['to']}")
+
+            response = input("\nProceed? [y/N] ")
+            if response.lower() != 'y':
+                print("Aborted")
+                return 0
+
+        # Actually push
+        result = course_sync.push_course(str(directory), dry_run=False)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        return 1
+
+    changes = result.get("changes", [])
+    errors = result.get("errors", [])
+
+    for c in changes:
+        print(f"  ✓ {c['field']}: {c['from']} → {c['to']}")
+
+    for e in errors:
+        print(f"  ✗ {e}")
+
+    print(f"\nPushed {len(changes)} changes" + (f", {len(errors)} errors" if errors else ""))
+    return 0 if not errors else 1
+
+
+def cmd_course_status(args: argparse.Namespace) -> int:
+    """Show course settings sync status."""
+    directory = Path(args.dir).resolve()
+
+    print(f"Course settings status for {directory}\n")
+
+    try:
+        result = course_sync.course_status(str(directory))
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        return 1
+
+    synced = result.get("synced", [])
+    differs = result.get("differs", [])
+    canvas_only = result.get("canvas_only", [])
+
+    if synced:
+        print(f"Synced ({len(synced)}):")
+        for s in synced[:10]:  # Limit display
+            print(f"  ✓ {s['field']}")
+        if len(synced) > 10:
+            print(f"  ... and {len(synced) - 10} more")
+
+    if differs:
+        print(f"\nDiffers ({len(differs)}) - local vs Canvas:")
+        for d in differs:
+            print(f"  ≠ {d['field']}:")
+            print(f"      local:  {d['local']}")
+            print(f"      Canvas: {d['canvas']}")
+
+    if canvas_only:
+        print(f"\nCanvas only ({len(canvas_only)}):")
+        for c in canvas_only[:5]:
+            print(f"  ↓ {c['field']}: {c['value']}")
+
+    summary = result.get("summary", {})
+    print(f"\nSummary: {summary.get('synced_count', 0)} synced, "
+          f"{summary.get('differs_count', 0)} differ, "
+          f"{summary.get('canvas_only_count', 0)} canvas-only")
+
+    return 0
+
+
 def cmd_module_status(args: argparse.Namespace) -> int:
     """Show module sync status."""
     directory = Path(args.dir).resolve()
@@ -788,6 +927,19 @@ def main() -> int:
     module_status_parser = subparsers.add_parser("module-status", help="Show module sync status")
     module_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
 
+    # pull-course command
+    pull_course_parser = subparsers.add_parser("pull-course", help="Pull course settings from Canvas")
+    pull_course_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
+    # push-course command
+    push_course_parser = subparsers.add_parser("push-course", help="Push course settings to Canvas")
+    push_course_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_course_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+
+    # course-status command
+    course_status_parser = subparsers.add_parser("course-status", help="Show course settings sync status")
+    course_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -822,6 +974,12 @@ def main() -> int:
         return cmd_push_modules(args)
     elif args.command == "module-status":
         return cmd_module_status(args)
+    elif args.command == "pull-course":
+        return cmd_pull_course(args)
+    elif args.command == "push-course":
+        return cmd_push_course(args)
+    elif args.command == "course-status":
+        return cmd_course_status(args)
 
     return 0
 
