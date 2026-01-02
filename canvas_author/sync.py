@@ -2,6 +2,7 @@
 Sync Module
 
 Two-way sync between Canvas wiki pages and local markdown files.
+Includes automatic image download/upload with relative path rewriting.
 """
 
 import re
@@ -12,6 +13,7 @@ from typing import Dict, Any, List, Optional
 from .client import get_canvas_client, CanvasClient
 from .pages import list_pages, get_page, create_page, update_page
 from .frontmatter import parse_frontmatter, create_page_frontmatter
+from .files import download_images_from_content, upload_images_from_content
 
 logger = logging.getLogger("canvas_author.sync")
 
@@ -29,6 +31,7 @@ def pull_pages(
     output_dir: str,
     include_frontmatter: bool = True,
     overwrite: bool = False,
+    download_images: bool = True,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
@@ -39,16 +42,21 @@ def pull_pages(
         output_dir: Directory to save markdown files
         include_frontmatter: Include YAML frontmatter with metadata
         overwrite: Overwrite existing files
+        download_images: Download embedded images to files/ directory
         client: Optional CanvasClient instance
 
     Returns:
-        Dict with results: pulled, skipped, errors
+        Dict with results: pulled, skipped, errors, images_downloaded
     """
+    canvas = client or get_canvas_client()
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    pages = list_pages(course_id, client)
-    results = {"pulled": [], "skipped": [], "errors": []}
+    pages = list_pages(course_id, canvas)
+    results = {"pulled": [], "skipped": [], "errors": [], "images_downloaded": 0}
+
+    # Get domain for URL matching
+    domain = canvas.api_url.replace("https://", "").replace("http://", "").rstrip("/")
 
     for page_meta in pages:
         try:
@@ -61,8 +69,16 @@ def pull_pages(
                 results["skipped"].append({"url": url, "reason": "file exists"})
                 continue
 
-            # Get full page content
-            page = get_page(course_id, url, as_markdown=True, client=client)
+            # Get full page content (as markdown)
+            page = get_page(course_id, url, as_markdown=True, client=canvas)
+            body = page["body"]
+
+            # Download images and rewrite URLs to relative paths
+            if download_images and body:
+                body, downloaded = download_images_from_content(
+                    body, course_id, output_path, domain, canvas, is_html=False
+                )
+                results["images_downloaded"] += len(downloaded)
 
             # Build content
             if include_frontmatter:
@@ -74,9 +90,9 @@ def pull_pages(
                     front_page=page.get("front_page", False),
                     updated_at=page.get("updated_at"),
                 )
-                content += page["body"]
+                content += body
             else:
-                content = page["body"]
+                content = body
 
             # Write file
             file_path.write_text(content, encoding="utf-8")
@@ -96,6 +112,7 @@ def push_pages(
     input_dir: str,
     create_missing: bool = True,
     update_existing: bool = True,
+    upload_images: bool = True,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
@@ -106,19 +123,21 @@ def push_pages(
         input_dir: Directory containing markdown files
         create_missing: Create pages that don't exist on Canvas
         update_existing: Update pages that already exist
+        upload_images: Upload local images to Canvas
         client: Optional CanvasClient instance
 
     Returns:
-        Dict with results: created, updated, skipped, errors
+        Dict with results: created, updated, skipped, errors, images_uploaded
     """
+    canvas = client or get_canvas_client()
     input_path = Path(input_dir)
     if not input_path.exists():
         raise ValueError(f"Input directory does not exist: {input_dir}")
 
     # Get existing pages
-    existing_pages = {p["url"]: p for p in list_pages(course_id, client)}
+    existing_pages = {p["url"]: p for p in list_pages(course_id, canvas)}
 
-    results = {"created": [], "updated": [], "skipped": [], "errors": []}
+    results = {"created": [], "updated": [], "skipped": [], "errors": [], "images_uploaded": 0}
 
     for file_path in input_path.glob("*.md"):
         try:
@@ -130,6 +149,13 @@ def push_pages(
             title = metadata.get("title") or file_path.stem.replace("-", " ").title()
             published = metadata.get("published", True)
 
+            # Upload images and rewrite URLs to Canvas paths
+            if upload_images and body:
+                body, uploaded = upload_images_from_content(
+                    body, course_id, input_path, canvas, is_markdown=True
+                )
+                results["images_uploaded"] += len(uploaded)
+
             if url in existing_pages:
                 if update_existing:
                     update_page(
@@ -139,7 +165,7 @@ def push_pages(
                         body=body,
                         from_markdown=True,
                         published=published if isinstance(published, bool) else True,
-                        client=client,
+                        client=canvas,
                     )
                     results["updated"].append({"url": url, "file": str(file_path)})
                     logger.info(f"Updated page '{url}' from {file_path}")
@@ -153,7 +179,7 @@ def push_pages(
                         body=body,
                         from_markdown=True,
                         published=published if isinstance(published, bool) else True,
-                        client=client,
+                        client=canvas,
                     )
                     results["created"].append({"url": url, "file": str(file_path)})
                     logger.info(f"Created page '{url}' from {file_path}")

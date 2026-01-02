@@ -11,9 +11,36 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 
 from .frontmatter import parse_frontmatter, generate_frontmatter
-from .pandoc import html_to_markdown, is_pandoc_available
+from .pandoc import html_to_markdown, markdown_to_html, is_pandoc_available
 
 logger = logging.getLogger("canvas_author.quiz_format")
+
+
+def markdown_to_canvas_html(text: str) -> str:
+    """
+    Convert markdown text to HTML suitable for Canvas.
+    Wraps in <p> tags if no block elements present.
+    """
+    if not text:
+        return ""
+    
+    if is_pandoc_available():
+        html = markdown_to_html(text)
+        # Remove wrapping <p> if it's a single paragraph
+        html = html.strip()
+        return html
+    else:
+        # Basic conversion without pandoc
+        # Convert bold/italic
+        html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+        html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
+        # Convert line breaks
+        html = html.replace('\n\n', '</p><p>')
+        html = html.replace('\n', '<br>')
+        if '</p>' not in html:
+            html = f'<p>{html}</p>'
+        return html
 
 # Patterns for script/link tags that Canvas injects (we strip on pull, re-add on push)
 SCRIPT_LINK_PATTERN = re.compile(
@@ -86,28 +113,67 @@ class Answer:
     match_target: Optional[str] = None  # For matching questions
     letter: Optional[str] = None  # a, b, c, etc.
 
-    def to_canvas_answer(self, question_type: str) -> Dict[str, Any]:
-        """Convert to Canvas API answer format."""
+    def to_canvas_answer(self, question_type: str, convert_markdown: bool = True) -> Dict[str, Any]:
+        """
+        Convert to Canvas API answer format.
+        
+        Args:
+            question_type: The Canvas question type
+            convert_markdown: If True, convert answer text from markdown to HTML
+        """
+        # For most answer types, convert markdown to HTML
+        answer_text = self.text
+        if convert_markdown and answer_text and question_type not in ("numerical_question",):
+            # Simple inline conversion for answers (they're usually short)
+            answer_text = answer_text.strip()
+            if '**' in answer_text or '*' in answer_text or '`' in answer_text:
+                answer_text = markdown_to_canvas_html(answer_text)
+        
         if question_type == "matching_question":
+            match_right = self.match_target or ""
+            if convert_markdown and match_right and ('**' in match_right or '*' in match_right):
+                match_right = markdown_to_canvas_html(match_right)
             return {
-                "answer_match_left": self.text,
-                "answer_match_right": self.match_target or "",
+                "answer_match_left": answer_text,
+                "answer_match_right": match_right,
             }
         elif question_type in ("short_answer_question", "fill_in_multiple_blanks_question"):
+            # Short answers should remain plain text for matching
             return {
-                "answer_text": self.text,
+                "answer_text": self.text.strip(),
                 "answer_weight": 100 if self.correct else 0,
             }
         elif question_type == "numerical_question":
-            return {
-                "numerical_answer_type": "exact_answer",
-                "answer_exact": float(self.text) if self.text.replace(".", "").replace("-", "").isdigit() else 0,
-                "answer_error_margin": 0,
-            }
+            # Parse numerical value - handle ranges like "5-10" or "5 to 10"
+            text = self.text.strip()
+            try:
+                if '-' in text and not text.startswith('-'):
+                    parts = text.split('-')
+                    low, high = float(parts[0]), float(parts[1])
+                    mid = (low + high) / 2
+                    margin = (high - low) / 2
+                    return {
+                        "numerical_answer_type": "range_answer",
+                        "answer_exact": mid,
+                        "answer_error_margin": margin,
+                    }
+                else:
+                    return {
+                        "numerical_answer_type": "exact_answer",
+                        "answer_exact": float(text),
+                        "answer_error_margin": 0,
+                    }
+            except ValueError:
+                logger.warning(f"Could not parse numerical answer: {text}")
+                return {
+                    "numerical_answer_type": "exact_answer",
+                    "answer_exact": 0,
+                    "answer_error_margin": 0,
+                }
         else:
             # MC, MA, TF
             return {
-                "answer_text": self.text,
+                "answer_text": answer_text,
                 "answer_weight": 100 if self.correct else 0,
             }
 
@@ -131,14 +197,24 @@ class Question:
         """Get the Canvas API question type."""
         return QUESTION_TYPES.get(self.type, "multiple_choice_question")
 
-    def to_canvas_question(self) -> Dict[str, Any]:
-        """Convert to Canvas API question format."""
+    def to_canvas_question(self, convert_markdown: bool = True) -> Dict[str, Any]:
+        """
+        Convert to Canvas API question format.
+        
+        Args:
+            convert_markdown: If True, convert question text from markdown to HTML
+        """
+        # Convert question text to HTML for Canvas
+        question_text = self.text
+        if convert_markdown and question_text:
+            question_text = markdown_to_canvas_html(question_text)
+        
         question_data = {
             "question_name": f"Question {self.number}",
-            "question_text": self.text,
+            "question_text": question_text,
             "question_type": self.canvas_type,
             "points_possible": self.points,
-            "answers": [a.to_canvas_answer(self.canvas_type) for a in self.answers],
+            "answers": [a.to_canvas_answer(self.canvas_type, convert_markdown) for a in self.answers],
         }
 
         if self.correct_feedback:
@@ -412,19 +488,33 @@ def questions_from_canvas(canvas_questions: List[Dict[str, Any]]) -> List[Questi
     for i, cq in enumerate(canvas_questions, 1):
         qtype = CANVAS_TO_CODE.get(cq.get("question_type", ""), "MC")
 
-        # Parse answers
+        # Parse answers - clean HTML from answer text too
         answers = []
         for ans in cq.get("answers", []):
             if qtype == "MAT":
+                left_text = ans.get("left", ans.get("answer_match_left", ""))
+                right_text = ans.get("right", ans.get("answer_match_right", ""))
                 answers.append(Answer(
-                    text=ans.get("left", ans.get("answer_match_left", "")),
-                    match_target=ans.get("right", ans.get("answer_match_right", "")),
+                    text=clean_question_html(left_text) if left_text else "",
+                    match_target=clean_question_html(right_text) if right_text else "",
+                    correct=True,
+                ))
+            elif qtype == "NUM":
+                # For numerical, keep the raw value
+                answers.append(Answer(
+                    text=str(ans.get("exact", ans.get("answer_exact", "0"))),
                     correct=True,
                 ))
             else:
                 is_correct = ans.get("weight", 0) > 0
+                answer_text = ans.get("text", ans.get("answer_text", ""))
+                # Clean HTML from answer text (but keep it simple for short answers)
+                if qtype in ("SA", "FIB"):
+                    clean_text = answer_text.strip() if answer_text else ""
+                else:
+                    clean_text = clean_question_html(answer_text) if answer_text else ""
                 answers.append(Answer(
-                    text=ans.get("text", ans.get("answer_text", "")),
+                    text=clean_text,
                     correct=is_correct,
                 ))
 

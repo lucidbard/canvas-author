@@ -2,6 +2,7 @@
 Quiz Sync Module
 
 Pull and push operations for syncing quizzes between Canvas and local markdown files.
+Includes automatic image download/upload with relative path rewriting.
 """
 
 import logging
@@ -28,6 +29,7 @@ from .quiz_format import (
     quiz_metadata_from_canvas,
     Question,
 )
+from .files import download_images_from_content, upload_images_from_content
 from .exceptions import ResourceNotFoundError
 
 logger = logging.getLogger("canvas_author.quiz_sync")
@@ -46,6 +48,7 @@ def pull_quizzes(
     course_id: str,
     output_dir: str,
     overwrite: bool = False,
+    download_images: bool = True,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
@@ -55,19 +58,24 @@ def pull_quizzes(
         course_id: Canvas course ID
         output_dir: Directory to write quiz files
         overwrite: Whether to overwrite existing files
+        download_images: Download embedded images to files/ directory
         client: Optional CanvasClient instance
 
     Returns:
-        Dict with 'pulled', 'skipped', and 'errors' lists
+        Dict with 'pulled', 'skipped', 'errors', and 'images_downloaded'
     """
     canvas = client or get_canvas_client()
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
+    # Get domain for URL matching
+    domain = canvas.api_url.replace("https://", "").replace("http://", "").rstrip("/")
+
     result = {
         "pulled": [],
         "skipped": [],
         "errors": [],
+        "images_downloaded": 0,
     }
 
     quizzes = list_quizzes(course_id, client=canvas)
@@ -98,11 +106,27 @@ def pull_quizzes(
             questions_data = get_quiz_questions(course_id, quiz_id, client=canvas)
             questions = questions_from_canvas(questions_data)
 
+            # Download images from question text and rewrite to relative paths
+            if download_images:
+                for question in questions:
+                    if question.text:
+                        question.text, downloaded = download_images_from_content(
+                            question.text, course_id, output_path, domain, canvas, is_html=False
+                        )
+                        result["images_downloaded"] += len(downloaded)
+
             # Build metadata
             metadata = quiz_metadata_from_canvas(quiz_data, course_id)
 
             # Get description as instructions
             instructions = quiz_data.get("description", "")
+
+            # Download images from instructions too
+            if download_images and instructions:
+                instructions, downloaded = download_images_from_content(
+                    instructions, course_id, output_path, domain, canvas, is_html=False
+                )
+                result["images_downloaded"] += len(downloaded)
 
             # Generate markdown
             content = generate_quiz_markdown(metadata, questions, instructions)
@@ -134,6 +158,7 @@ def push_quizzes(
     input_dir: str,
     create_missing: bool = True,
     update_existing: bool = True,
+    upload_images: bool = True,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
@@ -144,10 +169,11 @@ def push_quizzes(
         input_dir: Directory containing quiz markdown files
         create_missing: Whether to create quizzes that don't exist on Canvas
         update_existing: Whether to update quizzes that already exist
+        upload_images: Upload local images to Canvas
         client: Optional CanvasClient instance
 
     Returns:
-        Dict with 'created', 'updated', 'skipped', and 'errors' lists
+        Dict with 'created', 'updated', 'skipped', 'errors', and 'images_uploaded'
     """
     canvas = client or get_canvas_client()
     input_path = Path(input_dir)
@@ -157,6 +183,7 @@ def push_quizzes(
         "updated": [],
         "skipped": [],
         "errors": [],
+        "images_uploaded": 0,
     }
 
     # Find all quiz markdown files
@@ -173,6 +200,21 @@ def push_quizzes(
 
             title = metadata.get("title", file_path.stem.replace(".quiz", ""))
             quiz_id = metadata.get("quiz_id")
+
+            # Upload images from question text and rewrite to Canvas URLs
+            if upload_images:
+                for question in questions:
+                    if question.text:
+                        question.text, uploaded = upload_images_from_content(
+                            question.text, course_id, input_path, canvas, is_markdown=True
+                        )
+                        result["images_uploaded"] += len(uploaded)
+                # Also handle description/instructions in metadata
+                if metadata.get("description"):
+                    metadata["description"], uploaded = upload_images_from_content(
+                        metadata["description"], course_id, input_path, canvas, is_markdown=True
+                    )
+                    result["images_uploaded"] += len(uploaded)
 
             # Check if quiz exists
             if quiz_id and str(quiz_id) in existing_quizzes:

@@ -11,7 +11,7 @@ from typing import Optional
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync
+from . import pages, assignments, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module
 from .pandoc import is_pandoc_available
 
 logger = logging.getLogger("canvas_author.server")
@@ -158,21 +158,24 @@ def delete_page(course_id: str, page_url: str) -> str:
 def pull_pages(
     course_id: str,
     output_dir: str,
-    overwrite: bool = False
+    overwrite: bool = False,
+    download_images: bool = True
 ) -> str:
     """
     Pull all wiki pages from Canvas and save as local markdown files.
+    Images are downloaded to files/ directory with URLs rewritten to relative paths.
 
     Args:
         course_id: Canvas course ID
         output_dir: Directory to save markdown files
         overwrite: Overwrite existing files (default: false)
+        download_images: Download embedded images to files/ directory (default: true)
 
     Returns:
-        JSON with results: pulled, skipped, errors
+        JSON with results: pulled, skipped, errors, images_downloaded
     """
     try:
-        result = sync.pull_pages(course_id, output_dir, overwrite=overwrite)
+        result = sync.pull_pages(course_id, output_dir, overwrite=overwrite, download_images=download_images)
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -183,25 +186,29 @@ def push_pages(
     course_id: str,
     input_dir: str,
     create_missing: bool = True,
-    update_existing: bool = True
+    update_existing: bool = True,
+    upload_images: bool = True
 ) -> str:
     """
     Push local markdown files to Canvas as wiki pages.
+    Local images are uploaded to Canvas with URLs rewritten to Canvas paths.
 
     Args:
         course_id: Canvas course ID
         input_dir: Directory containing markdown files
         create_missing: Create pages that don't exist on Canvas (default: true)
         update_existing: Update pages that already exist (default: true)
+        upload_images: Upload local images to Canvas (default: true)
 
     Returns:
-        JSON with results: created, updated, skipped, errors
+        JSON with results: created, updated, skipped, errors, images_uploaded
     """
     try:
         result = sync.push_pages(
             course_id, input_dir,
             create_missing=create_missing,
-            update_existing=update_existing
+            update_existing=update_existing,
+            upload_images=upload_images
         )
         return json.dumps(result, indent=2)
     except Exception as e:
@@ -758,21 +765,24 @@ def get_quiz_questions(course_id: str, quiz_id: str) -> str:
 def pull_quizzes(
     course_id: str,
     output_dir: str,
-    overwrite: bool = False
+    overwrite: bool = False,
+    download_images: bool = True
 ) -> str:
     """
     Pull all quizzes from Canvas and save as local markdown files.
+    Images are downloaded to files/ directory with URLs rewritten to relative paths.
 
     Args:
         course_id: Canvas course ID
         output_dir: Directory to save quiz markdown files
         overwrite: Overwrite existing files (default: false)
+        download_images: Download embedded images to files/ directory (default: true)
 
     Returns:
-        JSON with results: pulled, skipped, errors
+        JSON with results: pulled, skipped, errors, images_downloaded
     """
     try:
-        result = quiz_sync.pull_quizzes(course_id, output_dir, overwrite=overwrite)
+        result = quiz_sync.pull_quizzes(course_id, output_dir, overwrite=overwrite, download_images=download_images)
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -783,25 +793,29 @@ def push_quizzes(
     course_id: str,
     input_dir: str,
     create_missing: bool = True,
-    update_existing: bool = True
+    update_existing: bool = True,
+    upload_images: bool = True
 ) -> str:
     """
     Push local quiz markdown files to Canvas.
+    Local images are uploaded to Canvas with URLs rewritten to Canvas paths.
 
     Args:
         course_id: Canvas course ID
         input_dir: Directory containing quiz markdown files (*.quiz.md)
         create_missing: Create quizzes that don't exist on Canvas (default: true)
         update_existing: Update quizzes that already exist (default: true)
+        upload_images: Upload local images to Canvas (default: true)
 
     Returns:
-        JSON with results: created, updated, skipped, errors
+        JSON with results: created, updated, skipped, errors, images_uploaded
     """
     try:
         result = quiz_sync.push_quizzes(
             course_id, input_dir,
             create_missing=create_missing,
-            update_existing=update_existing
+            update_existing=update_existing,
+            upload_images=upload_images
         )
         return json.dumps(result, indent=2)
     except Exception as e:
@@ -921,6 +935,101 @@ def check_pandoc() -> str:
     })
 
 
+@mcp.tool()
+def list_course_files(course_id: str) -> str:
+    """
+    List all files in a Canvas course.
+
+    Args:
+        course_id: Canvas course ID
+
+    Returns:
+        JSON list of files with id, display_name, size, content_type
+    """
+    try:
+        result = files_module.list_course_files(course_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def pull_course_files(
+    course_id: str,
+    output_dir: str,
+    size_threshold_mb: float = 2.0,
+    overwrite: bool = False
+) -> str:
+    """
+    Pull all files from a Canvas course to local directory.
+
+    Large files (exceeding size_threshold_mb) create placeholder files instead
+    of downloading immediately. Use download_pending_files() to get them later.
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save files (files go in {output_dir}/files/)
+        size_threshold_mb: Max file size in MB to auto-download (default: 2.0)
+        overwrite: Overwrite existing files (default: false)
+
+    Returns:
+        JSON with results: downloaded, pending, skipped, errors
+    """
+    try:
+        threshold_bytes = int(size_threshold_mb * 1024 * 1024)
+        result = files_module.pull_course_files(
+            course_id, output_dir,
+            size_threshold=threshold_bytes,
+            overwrite=overwrite
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def download_pending_files(
+    course_id: str,
+    files_dir: str,
+    file_ids: Optional[str] = None
+) -> str:
+    """
+    Download files that were skipped due to size during pull.
+
+    Args:
+        course_id: Canvas course ID
+        files_dir: Directory containing the files/ folder with placeholders
+        file_ids: Optional comma-separated list of file IDs to download (default: all pending)
+
+    Returns:
+        JSON with results: downloaded, errors
+    """
+    try:
+        ids_list = file_ids.split(",") if file_ids else None
+        result = files_module.download_pending_files(course_id, files_dir, file_ids=ids_list)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def list_pending_files(files_dir: str) -> str:
+    """
+    List files that have placeholders but haven't been downloaded yet.
+
+    Args:
+        files_dir: Directory to check for pending files
+
+    Returns:
+        JSON list of pending files with size and metadata
+    """
+    try:
+        result = files_module.list_pending_files(files_dir)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def main():
     """Run the Canvas MCP server."""
     print("Starting Canvas MCP Server...")
@@ -929,6 +1038,7 @@ def main():
     print("       list_quizzes, get_quiz, get_quiz_questions,")
     print("       pull_quizzes, push_quizzes, quiz_sync_status,")
     print("       pull_modules, push_modules, module_sync_status,")
+    print("       pull_course_files, download_pending_files, list_pending_files,")
     print("       list_courses, list_assignments, get_assignment, list_submissions,")
     print("       list_discussions, get_discussion_posts,")
     print("       get_rubric, update_rubric")
