@@ -1,6 +1,6 @@
-# Canvas MCP
+# Canvas Author
 
-A Canvas LMS MCP server and CLI for managing wiki pages, assignments, discussions, and rubrics with markdown support via pandoc.
+A Canvas LMS MCP server and CLI for managing wiki pages, quizzes, modules, and course settings with markdown support via pandoc. Designed for teachers and course authors who want to create and manage course content offline, then sync to Canvas.
 
 ## Features
 
@@ -16,7 +16,7 @@ A Canvas LMS MCP server and CLI for managing wiki pages, assignments, discussion
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/canvas-author.git
+git clone https://github.com/lucidbard/canvas-author.git
 cd canvas-author
 pip install -e .
 
@@ -42,10 +42,10 @@ CANVAS_DOMAIN=canvas.instructure.com  # or your institution's domain
 
 ```bash
 # List your courses to find the ID
-canvas-mcp list-courses
+canvas-author list-courses
 
 # Initialize a directory for a course
-canvas-mcp init 12345 --dir courses/my-course
+canvas-author init 12345 --dir courses/my-course
 ```
 
 This creates a `.canvas.json` file with the course configuration.
@@ -54,29 +54,77 @@ This creates a `.canvas.json` file with the course configuration.
 
 ```bash
 # Pull all wiki pages as markdown files
-canvas-mcp pull --dir courses/my-course
+canvas-author pull --dir courses/my-course
 
 # Force overwrite existing files
-canvas-mcp pull --dir courses/my-course --force
+canvas-author pull --dir courses/my-course --force
 ```
 
 ### Push pages to Canvas
 
 ```bash
 # Push all markdown files to Canvas
-canvas-mcp push --dir courses/my-course
+canvas-author push --dir courses/my-course
 
 # Only create new pages, don't update existing
-canvas-mcp push --dir courses/my-course --create-only
+canvas-author push --dir courses/my-course --create-only
 
 # Only update existing pages, don't create new
-canvas-mcp push --dir courses/my-course --update-only
+canvas-author push --dir courses/my-course --update-only
 ```
 
 ### Check sync status
 
 ```bash
-canvas-mcp status --dir courses/my-course
+canvas-author status --dir courses/my-course
+```
+
+### Quiz Sync
+
+Quizzes use a Respondus-inspired markdown format:
+
+```bash
+# Pull quizzes from Canvas
+canvas-author pull-quizzes --dir courses/my-course
+
+# Push quizzes to Canvas
+canvas-author push-quizzes --dir courses/my-course
+
+# Check quiz sync status
+canvas-author quiz-status --dir courses/my-course
+
+# List quizzes in course
+canvas-author list-quizzes --dir courses/my-course
+```
+
+### Module Sync
+
+Modules are synced via `modules.yaml`:
+
+```bash
+# Pull modules from Canvas
+canvas-author pull-modules --dir courses/my-course
+
+# Push modules to Canvas
+canvas-author push-modules --dir courses/my-course
+
+# Check module sync status
+canvas-author module-status --dir courses/my-course
+```
+
+### Course Settings Sync
+
+Course settings are synced via `course.yaml`:
+
+```bash
+# Pull course settings from Canvas
+canvas-author pull-course --dir courses/my-course
+
+# Push course settings to Canvas
+canvas-author push-course --dir courses/my-course
+
+# Check course settings sync status
+canvas-author course-status --dir courses/my-course
 ```
 
 ## Directory Structure
@@ -84,12 +132,19 @@ canvas-mcp status --dir courses/my-course
 ```
 courses/
 ├── course-12345/
-│   ├── .canvas.json          # Course config
+│   ├── .canvas.json          # Course config (auto-generated)
+│   ├── course.yaml           # Course settings
+│   ├── modules.yaml          # Module structure
 │   ├── syllabus.md           # Wiki pages as markdown
 │   ├── week-1-notes.md
-│   └── resources.md
+│   ├── resources.md
+│   └── quizzes/
+│       ├── midterm.md        # Quiz in Respondus-like format
+│       └── final-exam.md
 └── course-67890/
     ├── .canvas.json
+    ├── course.yaml
+    ├── modules.yaml
     └── welcome.md
 ```
 
@@ -109,6 +164,112 @@ updated_at: 2024-01-15T10:30:00Z
 # Course Syllabus
 
 Your content here...
+```
+
+## Quiz Markdown Format
+
+Quizzes use a Respondus-inspired markdown format with question type codes:
+
+| Code | Question Type |
+|------|---------------|
+| MC   | Multiple Choice |
+| MA   | Multiple Answers (select all) |
+| TF   | True/False |
+| SA   | Short Answer |
+| ESS  | Essay |
+| FIB  | Fill in the Blank |
+| MAT  | Matching |
+| NUM  | Numerical |
+
+Example quiz:
+
+```markdown
+---
+title: Midterm Exam
+quiz_id: 12345
+time_limit: 60
+published: false
+shuffle_answers: true
+---
+
+# Midterm Exam
+
+## Questions
+
+### 1. [MC] What is 2 + 2? (2 pts)
+
+a. 3
+*b. 4
+c. 5
+d. 6
+
+---
+
+### 2. [TF] The Earth orbits the Sun. (1 pt)
+
+*a. True
+b. False
+
+---
+
+### 3. [SA] What is the capital of France? (1 pt)
+
+*Paris
+*paris
+```
+
+- Prefix correct answers with `*`
+- Points specified in parentheses after question text
+- Questions separated by `---`
+
+## Modules YAML Format
+
+The `modules.yaml` file defines course module structure:
+
+```yaml
+modules:
+- name: Week 1 - Introduction
+  published: true
+  items:
+  - type: page
+    page_url: welcome
+  - type: page
+    page_url: syllabus
+  - type: external_url
+    url: https://example.com/video
+    title: 'Introduction Video'
+  - type: subheader
+    title: Readings
+  - type: assignment
+    content_id: '12345'
+    title: 'Lab 1'
+  - type: quiz
+    content_id: '67890'
+    title: 'Quiz 1'
+  - type: file
+    content_id: '11111'
+    title: 'Lecture Slides'
+```
+
+Supported item types: `page`, `assignment`, `quiz`, `file`, `external_url`, `subheader`
+
+## Course Settings YAML Format
+
+The `course.yaml` file stores course configuration:
+
+```yaml
+canvas:
+  course_id: '12345'
+  domain: canvas.instructure.com
+settings:
+  name: My Course
+  course_code: CS101
+  default_view: syllabus
+  public_syllabus: false
+  time_zone: America/New_York
+  license: private
+sync:
+  last_pull: '2024-01-15T10:30:00Z'
 ```
 
 ## GitHub Actions
@@ -133,10 +294,10 @@ jobs:
         with:
           python-version: '3.11'
       - run: sudo apt-get install -y pandoc
-      - run: pip install canvas-mcp
+      - run: pip install canvas-author
       - run: |
           for dir in courses/*/; do
-            canvas-mcp push --dir "$dir"
+            canvas-author push --dir "$dir"
           done
         env:
           CANVAS_API_TOKEN: ${{ secrets.CANVAS_API_TOKEN }}
@@ -160,10 +321,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
       - run: sudo apt-get install -y pandoc
-      - run: pip install canvas-mcp
+      - run: pip install canvas-author
       - run: |
           for dir in courses/*/; do
-            canvas-mcp pull --dir "$dir" --force
+            canvas-author pull --dir "$dir" --force
           done
         env:
           CANVAS_API_TOKEN: ${{ secrets.CANVAS_API_TOKEN }}
@@ -180,7 +341,7 @@ jobs:
 Run the MCP server for use with Claude Code or other MCP clients:
 
 ```bash
-canvas-mcp server
+canvas-author server
 ```
 
 Or add to your MCP configuration:
@@ -189,7 +350,7 @@ Or add to your MCP configuration:
 {
   "mcpServers": {
     "canvas": {
-      "command": "canvas-mcp",
+      "command": "canvas-author",
       "args": ["server"],
       "env": {
         "CANVAS_API_TOKEN": "your_token",
@@ -336,7 +497,7 @@ custom_css: |
 
 ## Python API
 
-Use canvas-mcp as a library:
+Use canvas-author as a library:
 
 ```python
 from canvas_mcp import (
@@ -399,5 +560,5 @@ Canvas has API rate limits. If you hit them:
 
 ## License
 
-MIT
+GPL-3.0-or-later - See [LICENSE](LICENSE) for details.
 

@@ -12,7 +12,7 @@ from canvasapi.exceptions import ResourceDoesNotExist, CanvasException
 from .client import get_canvas_client, CanvasClient
 from .exceptions import ResourceNotFoundError
 
-logger = logging.getLogger("canvas_mcp.assignments")
+logger = logging.getLogger("canvas_author.assignments")
 
 # Fields to include in assignment responses
 ASSIGNMENT_FIELDS = [

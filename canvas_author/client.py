@@ -13,7 +13,7 @@ from canvasapi.exceptions import InvalidAccessToken
 
 from .exceptions import ConfigurationError, AuthenticationError, ValidationError
 
-logger = logging.getLogger("canvas_mcp.client")
+logger = logging.getLogger("canvas_author.client")
 
 # Global client instance cache
 _canvas_client: Optional["CanvasClient"] = None

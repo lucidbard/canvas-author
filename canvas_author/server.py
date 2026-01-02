@@ -11,10 +11,10 @@ from typing import Optional
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, discussions, rubrics, sync, quizzes, quiz_sync
+from . import pages, assignments, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync
 from .pandoc import is_pandoc_available
 
-logger = logging.getLogger("canvas_mcp.server")
+logger = logging.getLogger("canvas_author.server")
 
 # Initialize MCP server
 mcp = FastMCP(
@@ -227,6 +227,27 @@ def sync_status(course_id: str, local_dir: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+def init_course(course_id: str, directory: str) -> str:
+    """
+    Initialize a local directory for a Canvas course.
+
+    Creates course configuration files, directory structure, and pulls initial content.
+
+    Args:
+        course_id: Canvas course ID
+        directory: Local directory path to initialize
+
+    Returns:
+        JSON with initialization results including course name and files created
+    """
+    try:
+        result = course_sync.init_course(course_id, directory)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # =============================================================================
 # Course & Assignment Tools
 # =============================================================================
@@ -320,6 +341,76 @@ def get_submission(course_id: str, assignment_id: str, user_id: str) -> str:
     """
     try:
         result = assignments.get_submission(course_id, assignment_id, user_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def pull_assignments(
+    course_id: str,
+    output_dir: str,
+    overwrite: bool = False
+) -> str:
+    """
+    Pull all assignments from Canvas and save as local markdown files.
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save files (assignments subfolder will be created)
+        overwrite: Overwrite existing files (default: false)
+
+    Returns:
+        JSON with results: pulled, skipped, errors
+    """
+    try:
+        result = assignment_sync.pull_assignments(course_id, output_dir, overwrite=overwrite)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_assignments(
+    course_id: str,
+    input_dir: str,
+    update_existing: bool = True
+) -> str:
+    """
+    Push local markdown files to Canvas as assignment description updates.
+
+    Args:
+        course_id: Canvas course ID
+        input_dir: Directory containing assignment markdown files
+        update_existing: Update assignments that already exist (default: true)
+
+    Returns:
+        JSON with results: updated, skipped, errors
+    """
+    try:
+        result = assignment_sync.push_assignments(
+            course_id, input_dir,
+            update_existing=update_existing
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def assignment_sync_status(course_id: str, local_dir: str) -> str:
+    """
+    Compare Canvas assignments with local files.
+
+    Args:
+        course_id: Canvas course ID
+        local_dir: Local directory to check
+
+    Returns:
+        JSON with synced, canvas_only, local_only lists
+    """
+    try:
+        result = assignment_sync.assignment_sync_status(course_id, local_dir)
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -463,6 +554,147 @@ async def update_rubric(
 
 
 # =============================================================================
+# Rubric Sync Tools
+# =============================================================================
+
+@mcp.tool()
+def pull_rubrics(
+    course_id: str,
+    output_dir: str,
+    overwrite: bool = False
+) -> str:
+    """
+    Pull all rubrics from Canvas assignments and save as local YAML files.
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save rubric YAML files
+        overwrite: Overwrite existing files (default: false)
+
+    Returns:
+        JSON with results: pulled, skipped, no_rubric, errors
+    """
+    try:
+        result = rubric_sync.pull_rubrics(course_id, output_dir, overwrite=overwrite)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_rubrics(
+    course_id: str,
+    input_dir: str,
+    create_only: bool = False
+) -> str:
+    """
+    Push local YAML rubric files to Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        input_dir: Directory containing rubric YAML files (*.rubric.yaml)
+        create_only: Only create new rubrics, don't update existing (default: false)
+
+    Returns:
+        JSON with results: created, updated, skipped, errors
+    """
+    try:
+        result = rubric_sync.push_rubrics(
+            course_id, input_dir,
+            create_only=create_only
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def rubric_sync_status(course_id: str, local_dir: str) -> str:
+    """
+    Check sync status between Canvas rubrics and local YAML files.
+
+    Args:
+        course_id: Canvas course ID
+        local_dir: Directory containing local rubric files
+
+    Returns:
+        JSON with status: canvas_only, local_only, synced, summary
+    """
+    try:
+        result = rubric_sync.rubric_sync_status(course_id, local_dir)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# Submission Sync Tools
+# =============================================================================
+
+@mcp.tool()
+def pull_submissions(
+    course_id: str,
+    assignment_id: str,
+    output_dir: str,
+    include_attachments: bool = True,
+    anonymize: bool = False
+) -> str:
+    """
+    Pull all submissions for an assignment from Canvas.
+
+    Downloads submissions with optional attachments. Use anonymize=true for blind grading.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+        output_dir: Directory to save submissions
+        include_attachments: Download attachment files (default: true)
+        anonymize: Anonymize student identities for blind grading (default: false)
+
+    Returns:
+        JSON with results: pulled count, attachments downloaded, directory path
+    """
+    try:
+        result = submission_sync.pull_submissions(
+            course_id, assignment_id, output_dir,
+            include_attachments=include_attachments,
+            anonymize=anonymize
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def submission_status(
+    course_id: str,
+    assignment_id: str,
+    local_dir: Optional[str] = None
+) -> str:
+    """
+    Get submission status for an assignment.
+
+    Shows counts of submitted, graded, needs grading, late, missing submissions.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+        local_dir: Optional directory to check for local downloads
+
+    Returns:
+        JSON with submission counts and grading status
+    """
+    try:
+        result = submission_sync.submission_status(
+            course_id, assignment_id,
+            local_dir=local_dir
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
 # Quiz Tools
 # =============================================================================
 
@@ -596,6 +828,81 @@ def quiz_sync_status(course_id: str, local_dir: str) -> str:
 
 
 # =============================================================================
+# Module Sync Tools
+# =============================================================================
+
+@mcp.tool()
+def pull_modules(
+    course_id: str,
+    output_dir: str
+) -> str:
+    """
+    Pull all modules from Canvas and save as local YAML file (modules.yaml).
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save modules.yaml file
+
+    Returns:
+        JSON with results: modules pulled, items count
+    """
+    try:
+        result = module_sync.pull_modules(course_id, output_dir)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_modules(
+    course_id: str,
+    input_dir: str,
+    create_missing: bool = True,
+    update_existing: bool = True
+) -> str:
+    """
+    Push local modules.yaml to Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        input_dir: Directory containing modules.yaml file
+        create_missing: Create modules that don't exist on Canvas (default: true)
+        update_existing: Update modules that already exist (default: true)
+
+    Returns:
+        JSON with results: created, updated, skipped, errors
+    """
+    try:
+        result = module_sync.push_modules(
+            course_id, input_dir,
+            create_missing=create_missing,
+            update_existing=update_existing
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def module_sync_status(course_id: str, local_dir: str) -> str:
+    """
+    Check sync status between Canvas modules and local modules.yaml.
+
+    Args:
+        course_id: Canvas course ID
+        local_dir: Directory containing local modules.yaml file
+
+    Returns:
+        JSON with status: canvas_only, local_only, synced, summary
+    """
+    try:
+        result = module_sync.module_sync_status(course_id, local_dir)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
 # Utility Tools
 # =============================================================================
 
@@ -621,6 +928,7 @@ def main():
     print("       pull_pages, push_pages, sync_status,")
     print("       list_quizzes, get_quiz, get_quiz_questions,")
     print("       pull_quizzes, push_quizzes, quiz_sync_status,")
+    print("       pull_modules, push_modules, module_sync_status,")
     print("       list_courses, list_assignments, get_assignment, list_submissions,")
     print("       list_discussions, get_discussion_posts,")
     print("       get_rubric, update_rubric")

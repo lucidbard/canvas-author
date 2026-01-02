@@ -17,7 +17,7 @@ from typing import Dict, Optional, List
 
 from premailer import Premailer
 
-logger = logging.getLogger("canvas_mcp.styling")
+logger = logging.getLogger("canvas_author.styling")
 
 
 # Pre-defined CSS style presets for Canvas pages

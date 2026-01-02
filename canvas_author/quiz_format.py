@@ -11,8 +11,55 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 
 from .frontmatter import parse_frontmatter, generate_frontmatter
+from .pandoc import html_to_markdown, is_pandoc_available
 
-logger = logging.getLogger("canvas_mcp.quiz_format")
+logger = logging.getLogger("canvas_author.quiz_format")
+
+# Patterns for script/link tags that Canvas injects (we strip on pull, re-add on push)
+SCRIPT_LINK_PATTERN = re.compile(
+    r'<(?:script|link)[^>]*(?:custom_mobile|instructure-uploads)[^>]*(?:/>|>(?:</script>)?)',
+    re.IGNORECASE | re.DOTALL
+)
+
+
+def clean_question_html(html: str) -> str:
+    """
+    Clean HTML from Canvas question text:
+    - Strip <script> and <link> tags (they'll be re-added on push)
+    - Convert remaining HTML to markdown if pandoc available
+    - Otherwise strip remaining HTML tags
+    """
+    if not html:
+        return ""
+    
+    # Remove script and link tags
+    cleaned = SCRIPT_LINK_PATTERN.sub('', html)
+    
+    # Also remove any other script/link tags
+    cleaned = re.sub(r'<script[^>]*>.*?</script>', '', cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r'<link[^>]*/?>', '', cleaned, flags=re.IGNORECASE)
+    
+    # Convert HTML to markdown if pandoc available
+    if is_pandoc_available():
+        cleaned = html_to_markdown(cleaned)
+    else:
+        # Basic HTML stripping
+        cleaned = re.sub(r'<br\s*/?>', '\n', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'<p[^>]*>', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'</p>', '\n', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'<strong[^>]*>', '**', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'</strong>', '**', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'<em[^>]*>', '*', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'</em>', '*', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'<span[^>]*>', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'</span>', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'<[^>]+>', '', cleaned)  # Strip remaining tags
+    
+    # Clean up whitespace
+    cleaned = re.sub(r'&nbsp;', ' ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    return cleaned
 
 
 # Question type codes and their Canvas API equivalents
@@ -384,7 +431,7 @@ def questions_from_canvas(canvas_questions: List[Dict[str, Any]]) -> List[Questi
         question = Question(
             number=i,
             type=qtype,
-            text=cq.get("question_text", ""),
+            text=clean_question_html(cq.get("question_text", "")),
             points=cq.get("points_possible", 1.0),
             answers=answers,
             correct_feedback=cq.get("correct_comments"),

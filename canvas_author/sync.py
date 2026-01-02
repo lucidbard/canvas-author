@@ -13,7 +13,7 @@ from .client import get_canvas_client, CanvasClient
 from .pages import list_pages, get_page, create_page, update_page
 from .frontmatter import parse_frontmatter, create_page_frontmatter
 
-logger = logging.getLogger("canvas_mcp.sync")
+logger = logging.getLogger("canvas_author.sync")
 
 
 def sanitize_filename(title: str) -> str:

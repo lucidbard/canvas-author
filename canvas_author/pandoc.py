@@ -10,7 +10,7 @@ import logging
 import shutil
 from typing import Optional, Dict
 
-logger = logging.getLogger("canvas_mcp.pandoc")
+logger = logging.getLogger("canvas_author.pandoc")
 
 
 def _check_pandoc() -> bool:

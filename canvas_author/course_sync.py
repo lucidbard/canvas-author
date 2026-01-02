@@ -14,7 +14,7 @@ import yaml
 
 from .client import get_canvas_client, CanvasClient
 
-logger = logging.getLogger("canvas_mcp.course_sync")
+logger = logging.getLogger("canvas_author.course_sync")
 
 COURSE_FILE = "course.yaml"
 

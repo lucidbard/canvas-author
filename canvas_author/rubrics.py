@@ -12,7 +12,7 @@ from canvasapi.exceptions import ResourceDoesNotExist, CanvasException
 from .client import get_canvas_client, CanvasClient
 from .exceptions import ResourceNotFoundError, APIError
 
-logger = logging.getLogger("canvas_mcp.rubrics")
+logger = logging.getLogger("canvas_author.rubrics")
 
 
 def get_rubric(

@@ -16,7 +16,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-logger = logging.getLogger("canvas_mcp.frontmatter")
+logger = logging.getLogger("canvas_author.frontmatter")
 
 # Frontmatter delimiter
 FRONTMATTER_DELIMITER = "---"

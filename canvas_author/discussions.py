@@ -12,7 +12,7 @@ from .client import get_canvas_client, CanvasClient
 from .exceptions import ResourceNotFoundError
 from .pandoc import html_to_markdown
 
-logger = logging.getLogger("canvas_mcp.discussions")
+logger = logging.getLogger("canvas_author.discussions")
 
 
 def list_discussions(

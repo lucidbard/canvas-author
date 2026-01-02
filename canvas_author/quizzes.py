@@ -12,7 +12,7 @@ from .client import get_canvas_client, CanvasClient
 from .exceptions import ResourceNotFoundError
 from .quiz_format import Question, Answer, QUESTION_TYPES
 
-logger = logging.getLogger("canvas_mcp.quizzes")
+logger = logging.getLogger("canvas_author.quizzes")
 
 
 def list_quizzes(course_id: str, client: Optional[CanvasClient] = None) -> List[Dict[str, Any]]:
@@ -88,6 +88,41 @@ def get_quiz(
         "unlock_at": str(getattr(quiz, "unlock_at", None)),
         "lock_at": str(getattr(quiz, "lock_at", None)),
     }
+
+
+def quiz_has_submissions(
+    course_id: str,
+    quiz_id: str,
+    client: Optional[CanvasClient] = None
+) -> bool:
+    """
+    Check if a quiz has any submissions.
+
+    Args:
+        course_id: Canvas course ID
+        quiz_id: Quiz ID
+        client: Optional CanvasClient instance
+
+    Returns:
+        True if the quiz has submissions, False otherwise
+    """
+    canvas = client or get_canvas_client()
+    course = canvas.get_course(course_id)
+
+    try:
+        quiz = course.get_quiz(int(quiz_id))
+        submissions = list(quiz.get_submissions())
+        # Filter out submissions that are just previews or haven't been started
+        actual_submissions = [
+            s for s in submissions
+            if getattr(s, 'workflow_state', '') not in ('untaken', 'preview')
+        ]
+        return len(actual_submissions) > 0
+    except ResourceDoesNotExist:
+        raise ResourceNotFoundError("quiz", quiz_id)
+    except Exception as e:
+        logger.warning(f"Error checking quiz submissions: {e}")
+        return False  # Assume no submissions if we can't check
 
 
 def get_quiz_questions(

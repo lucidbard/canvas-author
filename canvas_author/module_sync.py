@@ -21,7 +21,7 @@ from .modules import (
     list_module_items,
 )
 
-logger = logging.getLogger("canvas_mcp.module_sync")
+logger = logging.getLogger("canvas_author.module_sync")
 
 MODULES_FILE = "modules.yaml"
 

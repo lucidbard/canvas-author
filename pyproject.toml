@@ -3,20 +3,20 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "canvas-mcp"
-version = "0.1.0"
+name = "canvas-author"
+version = "0.1.1"
 description = "Canvas LMS MCP server for managing wiki pages, assignments, discussions, and rubrics with markdown support"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.10"
 authors = [
-    {name = "John"}
+    {name = "John Murray", email = "lucidbard@users.noreply.github.com"}
 ]
 keywords = ["canvas", "lms", "mcp", "model-context-protocol", "markdown", "pandoc"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -49,8 +49,8 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["canvas_mcp"]
-omit = ["canvas_mcp/server.py"]
+source = ["canvas_author"]
+omit = ["canvas_author/server.py"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -59,12 +59,14 @@ exclude_lines = [
 ]
 
 [project.scripts]
-canvas-mcp = "canvas_mcp.cli:main"
+canvas-author = "canvas_author.cli:main"
+canvas-mcp = "canvas_author.cli:main"  # Backwards compatibility alias
 
 [project.urls]
-Homepage = "https://github.com/yourusername/canvas-mcp"
-Repository = "https://github.com/yourusername/canvas-mcp"
+Homepage = "https://github.com/lucidbard/canvas-author"
+Repository = "https://github.com/lucidbard/canvas-author"
+Issues = "https://github.com/lucidbard/canvas-author/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["canvas_mcp*"]
+include = ["canvas_author*"]

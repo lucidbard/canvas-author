@@ -72,7 +72,7 @@ from .pages import list_pages, get_page, create_page, update_page
 from .pandoc import is_pandoc_available
 from .assignments import list_courses
 from .frontmatter import parse_frontmatter, generate_frontmatter
-from . import quiz_sync, quizzes, module_sync, course_sync
+from . import quiz_sync, quizzes, module_sync, course_sync, rubric_sync, submission_sync
 
 # Config filename
 CONFIG_FILE = ".canvas.json"
@@ -856,6 +856,250 @@ def cmd_module_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pull_submissions(args: argparse.Namespace) -> int:
+    """Pull submissions from Canvas for an assignment."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Create submissions subdirectory
+    submissions_dir = directory / "submissions"
+    submissions_dir.mkdir(exist_ok=True)
+
+    print(f"Pulling submissions from course: {config.get('course_name', course_id)}")
+    print(f"Assignment ID: {args.assignment}")
+    if args.anonymize:
+        print("Mode: ANONYMOUS (student identities will be hidden)")
+
+    try:
+        result = submission_sync.pull_submissions(
+            course_id,
+            args.assignment,
+            str(submissions_dir),
+            include_attachments=not args.no_attachments,
+            anonymize=args.anonymize,
+        )
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    print(f"\n  ✓ Pulled {result['pulled']} submissions")
+    if result.get('attachments_downloaded', 0) > 0:
+        print(f"  ✓ Downloaded {result['attachments_downloaded']} attachments")
+    if result.get('errors', 0) > 0:
+        print(f"  ✗ {result['errors']} errors")
+
+    print(f"\n  → Saved to {result.get('directory', submissions_dir)}")
+    print(f"  → Index: {result.get('file', 'submissions.yaml')}")
+
+    if args.anonymize:
+        print("\n  ⚠ ID mapping saved to .id_mapping.yaml (keep private!)")
+
+    return 0 if result.get('errors', 0) == 0 else 1
+
+
+def cmd_submission_status(args: argparse.Namespace) -> int:
+    """Show submission status for an assignment."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    submissions_dir = directory / "submissions"
+
+    print(f"Course: {config.get('course_name', course_id)} ({course_id})")
+    print(f"Assignment ID: {args.assignment}\n")
+
+    try:
+        status = submission_sync.submission_status(
+            course_id,
+            args.assignment,
+            local_dir=str(submissions_dir) if submissions_dir.exists() else None,
+        )
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    print(f"Assignment: {status.get('assignment_name', 'Unknown')}")
+    print(f"\nSubmission Status:")
+    print(f"  Total students:  {status.get('total_students', 0)}")
+    print(f"  Submitted:       {status.get('submitted', 0)}")
+    print(f"  Not submitted:   {status.get('not_submitted', 0)}")
+    print(f"  Late:            {status.get('late', 0)}")
+    print(f"  Missing:         {status.get('missing', 0)}")
+
+    print(f"\nGrading Status:")
+    print(f"  Graded:          {status.get('graded', 0)}")
+    print(f"  Needs grading:   {status.get('needs_grading', 0)}")
+    print(f"  Pending review:  {status.get('pending_review', 0)}")
+
+    if status.get('local_download'):
+        anon_text = " (anonymous)" if status.get('local_anonymized') else ""
+        print(f"\nLocal download: {status.get('local_download')}{anon_text}")
+    else:
+        print(f"\nNo local download found. Run 'pull-submissions' to download.")
+
+    return 0
+
+
+def cmd_pull_rubrics(args: argparse.Namespace) -> int:
+    """Pull rubrics from Canvas to local YAML files."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Create rubrics subdirectory
+    rubric_dir = directory / "rubrics"
+    rubric_dir.mkdir(exist_ok=True)
+
+    print(f"Pulling rubrics from course: {config.get('course_name', course_id)}")
+
+    try:
+        result = rubric_sync.pull_rubrics(course_id, str(rubric_dir), overwrite=args.force)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    for item in result.get("pulled", []):
+        print(f"  ✓ {item['file']} ({item['criteria_count']} criteria)")
+
+    for item in result.get("skipped", []):
+        print(f"  - {item['file']}: skipped ({item.get('reason', 'exists')})")
+
+    for item in result.get("no_rubric", []):
+        print(f"  · {item['name']}: no rubric")
+
+    for item in result.get("errors", []):
+        print(f"  ✗ {item.get('name', 'unknown')}: {item['error']}")
+
+    pulled = len(result.get("pulled", []))
+    skipped = len(result.get("skipped", []))
+    no_rubric = len(result.get("no_rubric", []))
+    errors = len(result.get("errors", []))
+
+    print(f"\nPulled: {pulled}, Skipped: {skipped}, No rubric: {no_rubric}, Errors: {errors}")
+    return 0 if errors == 0 else 1
+
+
+def cmd_push_rubrics(args: argparse.Namespace) -> int:
+    """Push local YAML rubric files to Canvas."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Use rubrics subdirectory
+    rubric_dir = directory / "rubrics"
+    if not rubric_dir.exists():
+        print(f"Error: No rubrics directory found at {rubric_dir}")
+        return 1
+
+    print(f"Pushing rubrics to course: {config.get('course_name', course_id)}")
+
+    try:
+        result = rubric_sync.push_rubrics(
+            course_id,
+            str(rubric_dir),
+            create_only=args.create_only,
+        )
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    for item in result.get("created", []):
+        print(f"  + {item['file']} (created, {item['criteria_count']} criteria)")
+
+    for item in result.get("updated", []):
+        print(f"  ↑ {item['file']} (updated)")
+
+    for item in result.get("skipped", []):
+        print(f"  - {item['file']}: skipped ({item.get('reason', '')})")
+
+    for item in result.get("errors", []):
+        print(f"  ✗ {item['file']}: {item['error']}")
+
+    created = len(result.get("created", []))
+    updated = len(result.get("updated", []))
+    skipped = len(result.get("skipped", []))
+    errors = len(result.get("errors", []))
+
+    print(f"\nCreated: {created}, Updated: {updated}, Skipped: {skipped}, Errors: {errors}")
+    return 0 if errors == 0 else 1
+
+
+def cmd_rubric_status(args: argparse.Namespace) -> int:
+    """Show sync status for rubrics."""
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    rubric_dir = directory / "rubrics"
+
+    print(f"Course: {config.get('course_name', course_id)} ({course_id})")
+    print(f"Rubric directory: {rubric_dir}\n")
+
+    if not rubric_dir.exists():
+        print("No local rubrics directory found")
+        rubric_dir.mkdir(exist_ok=True)
+
+    try:
+        status = rubric_sync.rubric_sync_status(course_id, str(rubric_dir))
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    synced = status.get("synced", [])
+    canvas_only = status.get("canvas_only", [])
+    local_only = status.get("local_only", [])
+
+    print(f"Synced ({len(synced)}):")
+    for item in synced:
+        sync_mark = "✓" if item.get("synced", True) else "≠"
+        print(f"  {sync_mark} {item['file']} ({item['criteria_count']} criteria)")
+
+    if canvas_only:
+        print(f"\nCanvas only ({len(canvas_only)}) - run 'pull-rubrics' to download:")
+        for item in canvas_only:
+            print(f"  ↓ {item['name']} ({item['criteria_count']} criteria)")
+
+    if local_only:
+        print(f"\nLocal only ({len(local_only)}) - run 'push-rubrics' to upload:")
+        for item in local_only:
+            print(f"  ↑ {item['file']}")
+
+    summary = status.get("summary", {})
+    print(f"\nSummary: {summary.get('synced_count', 0)} synced, "
+          f"{summary.get('canvas_only_count', 0)} canvas-only, "
+          f"{summary.get('local_only_count', 0)} local-only")
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -940,6 +1184,32 @@ def main() -> int:
     course_status_parser = subparsers.add_parser("course-status", help="Show course settings sync status")
     course_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
 
+    # pull-rubrics command
+    pull_rubrics_parser = subparsers.add_parser("pull-rubrics", help="Pull rubrics from Canvas")
+    pull_rubrics_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    pull_rubrics_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+
+    # push-rubrics command
+    push_rubrics_parser = subparsers.add_parser("push-rubrics", help="Push rubrics to Canvas")
+    push_rubrics_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_rubrics_parser.add_argument("--create-only", action="store_true", help="Only create new rubrics, don't update")
+
+    # rubric-status command
+    rubric_status_parser = subparsers.add_parser("rubric-status", help="Show rubric sync status")
+    rubric_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
+    # pull-submissions command
+    pull_submissions_parser = subparsers.add_parser("pull-submissions", help="Pull submissions from Canvas")
+    pull_submissions_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    pull_submissions_parser.add_argument("--assignment", "-a", required=True, help="Assignment ID")
+    pull_submissions_parser.add_argument("--no-attachments", action="store_true", help="Don't download attachment files")
+    pull_submissions_parser.add_argument("--anonymize", action="store_true", help="Anonymize student identities for blind grading")
+
+    # submission-status command
+    submission_status_parser = subparsers.add_parser("submission-status", help="Show submission status for an assignment")
+    submission_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    submission_status_parser.add_argument("--assignment", "-a", required=True, help="Assignment ID")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -980,6 +1250,16 @@ def main() -> int:
         return cmd_push_course(args)
     elif args.command == "course-status":
         return cmd_course_status(args)
+    elif args.command == "pull-rubrics":
+        return cmd_pull_rubrics(args)
+    elif args.command == "push-rubrics":
+        return cmd_push_rubrics(args)
+    elif args.command == "rubric-status":
+        return cmd_rubric_status(args)
+    elif args.command == "pull-submissions":
+        return cmd_pull_submissions(args)
+    elif args.command == "submission-status":
+        return cmd_submission_status(args)
 
     return 0
 

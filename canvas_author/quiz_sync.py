@@ -19,6 +19,7 @@ from .quizzes import (
     update_quiz,
     create_question,
     delete_question,
+    quiz_has_submissions,
 )
 from .quiz_format import (
     parse_quiz_markdown,
@@ -29,7 +30,7 @@ from .quiz_format import (
 )
 from .exceptions import ResourceNotFoundError
 
-logger = logging.getLogger("canvas_mcp.quiz_sync")
+logger = logging.getLogger("canvas_author.quiz_sync")
 
 
 def _slugify(title: str) -> str:
@@ -182,6 +183,16 @@ def push_quizzes(
                         "title": title,
                         "reason": "update_existing is False",
                     })
+                    continue
+
+                # Check for submissions - don't update if students have taken the quiz
+                if quiz_has_submissions(course_id, str(quiz_id), client=canvas):
+                    result["skipped"].append({
+                        "file": file_path.name,
+                        "title": title,
+                        "reason": "quiz has student submissions - cannot modify",
+                    })
+                    logger.warning(f"Skipping quiz '{title}' - has student submissions")
                     continue
 
                 _update_quiz_from_markdown(

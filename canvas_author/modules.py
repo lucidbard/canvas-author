@@ -11,7 +11,7 @@ from canvasapi.exceptions import ResourceDoesNotExist
 from .client import get_canvas_client, CanvasClient
 from .exceptions import ResourceNotFoundError
 
-logger = logging.getLogger("canvas_mcp.modules")
+logger = logging.getLogger("canvas_author.modules")
 
 
 def list_modules(
