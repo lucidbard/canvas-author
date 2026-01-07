@@ -255,6 +255,70 @@ def init_course(course_id: str, directory: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+def pull_course(course_id: str, directory: str) -> str:
+    """
+    Pull course settings from Canvas to local course.yaml file.
+
+    Downloads course configuration including name, dates, visibility settings,
+    and syllabus to a local YAML file for editing and version control.
+
+    Args:
+        course_id: Canvas course ID
+        directory: Local directory path (course.yaml will be created here)
+
+    Returns:
+        JSON with pull results including file path and settings count
+    """
+    try:
+        result = course_sync.pull_course(course_id, directory, interactive=False)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_course(directory: str) -> str:
+    """
+    Push local course.yaml settings to Canvas.
+
+    Updates Canvas course configuration from local YAML file.
+    The file must contain a valid course_id.
+
+    Args:
+        directory: Local directory path containing course.yaml
+
+    Returns:
+        JSON with push results including updated settings count
+    """
+    try:
+        result = course_sync.push_course(directory, interactive=False)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def course_status(course_id: str, directory: str) -> str:
+    """
+    Compare local course.yaml with Canvas settings.
+
+    Shows differences between local settings and Canvas configuration.
+
+    Args:
+        course_id: Canvas course ID
+        directory: Local directory path containing course.yaml
+
+    Returns:
+        JSON with differences and sync status
+    """
+    try:
+        result = course_sync.course_status(course_id, directory)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # =============================================================================
 # Course & Assignment Tools
 # =============================================================================
