@@ -148,7 +148,7 @@ class TestCreatePageFrontmatter:
         )
 
         assert "title: Test Page" in result
-        assert "url: test-page" in result
+        assert "canvas_url: test-page" in result  # Canvas-generated URL
         assert "course_id: 12345" in result
 
     def test_create_page_frontmatter_full(self):

@@ -68,6 +68,33 @@ class SyncError(CanvasMCPError):
     pass
 
 
+class URLMismatchError(SyncError):
+    """Raised when local URL won't match Canvas-generated URL.
+
+    Canvas generates page URLs from the title, so if your local filename
+    differs from the slugified title, this error is raised to prevent
+    creating duplicate files.
+
+    Use --force-rename to allow the push and automatically rename local files.
+    """
+
+    def __init__(self, local_url: str, predicted_url: str, title: str, file_path: str):
+        self.local_url = local_url
+        self.predicted_url = predicted_url
+        self.title = title
+        self.file_path = file_path
+        message = (
+            f"URL mismatch: Local file '{file_path}' has URL '{local_url}', "
+            f"but Canvas will generate '{predicted_url}' from title '{title}'.\n"
+            f"This would create duplicate files on pull.\n"
+            f"Options:\n"
+            f"  1. Rename your file to '{predicted_url}.md'\n"
+            f"  2. Change the title to match your desired URL\n"
+            f"  3. Use --force-rename to push anyway and auto-rename local files"
+        )
+        super().__init__(message)
+
+
 class FileOperationError(CanvasMCPError):
     """Raised when file operations fail."""
 

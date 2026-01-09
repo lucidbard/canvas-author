@@ -72,6 +72,8 @@ from .pages import list_pages, get_page, create_page, update_page
 from .pandoc import is_pandoc_available
 from .assignments import list_courses
 from .frontmatter import parse_frontmatter, generate_frontmatter
+from .sync import predict_canvas_url, update_internal_links
+from .exceptions import URLMismatchError
 from . import quiz_sync, quizzes, module_sync, course_sync, rubric_sync, submission_sync
 
 # Config filename
@@ -269,7 +271,8 @@ def cmd_push(args: argparse.Namespace) -> int:
                 continue
 
             # Determine page URL and title
-            url = metadata.get("url") or file_path.stem
+            # Prefer canvas_url (Canvas-generated) over url (legacy) over filename
+            url = metadata.get("canvas_url") or metadata.get("url") or file_path.stem
             title = metadata.get("title") or file_path.stem.replace("-", " ").title()
             published = metadata.get("published", True)
             if isinstance(published, str):
@@ -305,6 +308,16 @@ def cmd_push(args: argparse.Namespace) -> int:
             else:
                 # Create new page
                 if not args.update_only:
+                    # Check if local URL will match Canvas-generated URL
+                    predicted_url = predict_canvas_url(title)
+                    if predicted_url != url and not args.force_rename:
+                        print(f"  ✗ {relative_path}: URL mismatch!")
+                        print(f"      Local URL: '{url}'")
+                        print(f"      Canvas will generate: '{predicted_url}' (from title '{title}')")
+                        print(f"      Use --force-rename to push anyway and auto-rename local files")
+                        errors += 1
+                        continue
+
                     result = create_page(
                         course_id=course_id,
                         title=title,
@@ -314,15 +327,33 @@ def cmd_push(args: argparse.Namespace) -> int:
                         client=client,
                         course=course,
                     )
+
+                    canvas_url = result.get("url", url)
                     print(f"  + {relative_path} (created)")
                     created += 1
 
-                    # Update local frontmatter with page_id
-                    metadata["page_id"] = result.get("url", url)
-                    metadata["url"] = result.get("url", url)
+                    # Update local frontmatter with canvas_url (Canvas-generated)
+                    metadata["page_id"] = canvas_url
+                    metadata["canvas_url"] = canvas_url  # Canvas-generated URL
+                    if "url" in metadata:
+                        del metadata["url"]  # Remove old 'url' field
                     metadata["updated_at"] = result.get("updated_at", "")
                     new_content = generate_frontmatter(metadata) + body
                     file_path.write_text(new_content, encoding="utf-8")
+
+                    # If URL differs, rename the file and update links in other files
+                    if canvas_url != url:
+                        new_file_path = file_path.parent / f"{canvas_url}.md"
+                        if not new_file_path.exists():
+                            file_path.rename(new_file_path)
+                            print(f"      Renamed: {file_path.name} → {new_file_path.name}")
+                            
+                            # Update links in other markdown files
+                            updated_files = update_internal_links(
+                                directory, url, canvas_url, exclude_file=new_file_path
+                            )
+                            if updated_files:
+                                print(f"      Updated links in {len(updated_files)} file(s)")
                 else:
                     print(f"  - {relative_path}: not on Canvas, skipping (--update-only)")
                     skipped += 1
@@ -333,6 +364,86 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     print(f"\nCreated: {created}, Updated: {updated}, Skipped: {skipped}, Errors: {errors}")
     return 0 if errors == 0 else 1
+
+
+def cmd_create_page(args: argparse.Namespace) -> int:
+    """Create a new page on Canvas and generate a local markdown file.
+    
+    This command creates a page on Canvas first, then creates a local markdown
+    file named after the Canvas-generated URL. This ensures the local filename
+    always matches the Canvas URL, avoiding sync issues.
+    """
+    directory = Path(args.dir).resolve()
+
+    # Load config
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    title = args.title
+    published = not args.draft
+
+    # Show what URL Canvas will generate
+    predicted_url = predict_canvas_url(title)
+    local_file = directory / f"{predicted_url}.md"
+
+    # Check if local file already exists
+    if local_file.exists() and not args.force:
+        print(f"Error: File already exists: {local_file.name}")
+        print("Use --force to overwrite")
+        return 1
+
+    # Check pandoc
+    if not is_pandoc_available():
+        print("Warning: pandoc not installed. Content conversion may not work correctly.")
+
+    try:
+        client = get_canvas_client()
+        course = client.get_course(course_id)
+
+        # Create initial body content
+        body = args.body if args.body else f"# {title}\n\n"
+
+        # Create the page on Canvas
+        print(f"Creating page on Canvas...")
+        result = create_page(
+            course_id=course_id,
+            title=title,
+            body=body,
+            from_markdown=True,
+            published=published,
+            client=client,
+            course=course,
+        )
+
+        canvas_url = result["url"]
+        print(f"  ✓ Created on Canvas: /pages/{canvas_url}")
+
+        # Create local markdown file with Canvas-generated URL as filename
+        local_file = directory / f"{canvas_url}.md"
+        
+        metadata = {
+            "title": title,
+            "canvas_url": canvas_url,
+            "page_id": canvas_url,
+            "published": published,
+            "updated_at": result.get("updated_at", ""),
+        }
+
+        content = generate_frontmatter(metadata) + body
+        local_file.write_text(content, encoding="utf-8")
+        print(f"  ✓ Created local file: {local_file.name}")
+
+        if canvas_url != predicted_url:
+            print(f"  Note: Canvas generated '{canvas_url}' (predicted '{predicted_url}')")
+
+        return 0
+
+    except Exception as e:
+        print(f"Error creating page: {e}")
+        return 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -1127,6 +1238,16 @@ def main() -> int:
     push_parser.add_argument("--create-only", action="store_true", help="Only create new pages, don't update")
     push_parser.add_argument("--update-only", action="store_true", help="Only update existing pages, don't create")
     push_parser.add_argument("--no-update-meta", action="store_true", help="Don't update local frontmatter after push")
+    push_parser.add_argument("--force-rename", action="store_true", 
+                            help="Allow pushing when filename differs from Canvas-generated URL (will auto-rename files)")
+
+    # create-page command
+    create_page_parser = subparsers.add_parser("create-page", help="Create a new page on Canvas and local file")
+    create_page_parser.add_argument("title", help="Page title (Canvas will generate URL from this)")
+    create_page_parser.add_argument("--dir", "-d", default=".", help="Directory for the local file (default: current)")
+    create_page_parser.add_argument("--body", "-b", default="", help="Initial page body content (markdown)")
+    create_page_parser.add_argument("--draft", action="store_true", help="Create as unpublished draft")
+    create_page_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing local file")
 
     # status command
     status_parser = subparsers.add_parser("status", help="Show sync status")
@@ -1222,6 +1343,8 @@ def main() -> int:
         return cmd_pull(args)
     elif args.command == "push":
         return cmd_push(args)
+    elif args.command == "create-page":
+        return cmd_create_page(args)
     elif args.command == "status":
         return cmd_status(args)
     elif args.command == "list-courses":
