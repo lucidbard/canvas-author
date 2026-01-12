@@ -29,6 +29,7 @@ Markdown frontmatter:
 """
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -1129,11 +1130,11 @@ def cmd_push_rubrics(args: argparse.Namespace) -> int:
     print(f"Pushing rubrics to course: {config.get('course_name', course_id)}")
 
     try:
-        result = rubric_sync.push_rubrics(
+        result = asyncio.run(rubric_sync.push_rubrics(
             course_id,
             str(rubric_dir),
             create_only=args.create_only,
-        )
+        ))
     except Exception as e:
         print(f"Error: {e}")
         return 1

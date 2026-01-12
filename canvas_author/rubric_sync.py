@@ -187,7 +187,7 @@ def pull_rubrics(
     return result
 
 
-def push_rubrics(
+async def push_rubrics(
     course_id: str,
     input_dir: str,
     create_only: bool = False,
@@ -205,8 +205,6 @@ def push_rubrics(
     Returns:
         Dict with 'created', 'updated', 'skipped', and 'errors' lists
     """
-    import asyncio
-
     canvas = client or get_canvas_client()
     input_path = Path(input_dir)
 
@@ -252,14 +250,9 @@ def push_rubrics(
             rubric_data, rubric_settings = _yaml_to_rubric(yaml_data)
 
             # Push to Canvas (update_rubric is async)
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                success, response = loop.run_until_complete(
-                    update_rubric(course_id, assignment_id, rubric_data, rubric_settings, client=canvas)
-                )
-            finally:
-                loop.close()
+            success, response = await update_rubric(
+                course_id, assignment_id, rubric_data, rubric_settings, client=canvas
+            )
 
             if success:
                 # Sync IDs back to local file

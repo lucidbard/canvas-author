@@ -702,7 +702,7 @@ def pull_rubrics(
 
 
 @mcp.tool()
-def push_rubrics(
+async def push_rubrics(
     course_id: str,
     input_dir: str,
     create_only: bool = False
@@ -719,7 +719,7 @@ def push_rubrics(
         JSON with results: created, updated, skipped, errors
     """
     try:
-        result = rubric_sync.push_rubrics(
+        result = await rubric_sync.push_rubrics(
             course_id, input_dir,
             create_only=create_only
         )
