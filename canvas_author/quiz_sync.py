@@ -31,6 +31,7 @@ from .quiz_format import (
 )
 from .files import download_images_from_content, upload_images_from_content
 from .exceptions import ResourceNotFoundError
+from .pandoc import markdown_to_html, is_pandoc_available
 
 logger = logging.getLogger("canvas_author.quiz_sync")
 
@@ -299,11 +300,16 @@ def _create_quiz_from_markdown(
     client: CanvasClient
 ) -> Dict[str, Any]:
     """Create a new quiz from parsed markdown data."""
+    # Convert markdown description to HTML
+    description = metadata.get("description", "")
+    if description and is_pandoc_available():
+        description = markdown_to_html(description)
+
     # Create the quiz
     quiz = create_quiz(
         course_id=course_id,
         title=metadata.get("title", "Untitled Quiz"),
-        description=metadata.get("description", ""),
+        description=description,
         quiz_type=metadata.get("quiz_type", "assignment"),
         time_limit=metadata.get("time_limit"),
         shuffle_answers=metadata.get("shuffle_answers", False),
@@ -331,12 +337,17 @@ def _update_quiz_from_markdown(
     client: CanvasClient
 ) -> Dict[str, Any]:
     """Update an existing quiz from parsed markdown data."""
+    # Convert markdown description to HTML
+    description = metadata.get("description")
+    if description and is_pandoc_available():
+        description = markdown_to_html(description)
+
     # Update quiz settings
     quiz = update_quiz(
         course_id=course_id,
         quiz_id=quiz_id,
         title=metadata.get("title"),
-        description=metadata.get("description"),
+        description=description,
         time_limit=metadata.get("time_limit"),
         shuffle_answers=metadata.get("shuffle_answers"),
         published=metadata.get("published"),
