@@ -34,17 +34,30 @@ def list_courses(
 
     Args:
         enrollment_type: Filter by enrollment type ('teacher', 'student', etc.)
-        enrollment_state: Filter by state ('active', 'all')
+        enrollment_state: Filter by state ('active', 'all', 'completed')
         client: Optional CanvasClient instance
 
     Returns:
         List of course dicts with keys: id, name, course_code, workflow_state
     """
     canvas = client or get_canvas_client()
-    all_courses = list(canvas.get_courses(
-        enrollment_type=enrollment_type,
-        include=["favorites"]
-    ))
+    
+    # Build API parameters
+    # Canvas API supports: state[] = unpublished, available, completed, deleted
+    # For enrollment: active, invited_or_pending, completed
+    api_params = {
+        "enrollment_type": enrollment_type,
+        "include": ["favorites"],
+        "per_page": 100,  # Fetch more per request for efficiency
+    }
+    
+    # If user wants all courses, include completed ones from Canvas API
+    if enrollment_state == "all":
+        api_params["state"] = ["available", "unpublished", "completed"]
+    
+    all_courses = list(canvas.get_courses(**api_params))
+    
+    logger.info(f"Canvas API returned {len(all_courses)} courses before filtering")
 
     if enrollment_state == "active":
         now = datetime.now(timezone.utc)

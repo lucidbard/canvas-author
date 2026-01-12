@@ -380,7 +380,15 @@ def list_courses(enrollment_state: str = "active") -> str:
         result = assignments.list_courses(enrollment_state=enrollment_state)
         return json.dumps(result, indent=2)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        error_str = str(e)
+        # Check for expired or invalid token errors
+        if "expired" in error_str.lower() or "invalid" in error_str.lower() or "401" in error_str:
+            return json.dumps({
+                "error": error_str,
+                "error_type": "authentication",
+                "message": "Your Canvas API token has expired or is invalid. Please update your token."
+            })
+        return json.dumps({"error": error_str})
 
 
 @mcp.tool()
