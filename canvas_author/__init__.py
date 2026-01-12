@@ -1,14 +1,13 @@
 """
-Canvas MCP - Canvas LMS MCP server for managing wiki pages, assignments, discussions, and rubrics.
+Canvas MCP - Canvas LMS MCP server for managing wiki pages, assignments, discussions, announcements, and rubrics.
 
 Uses pandoc for markdown <-> HTML conversion and supports two-way sync with local files.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 from .client import get_canvas_client, CanvasClient
 from .pandoc import markdown_to_html, html_to_markdown
-from .server import mcp, main
 from .exceptions import (
     CanvasMCPError,
     ConfigurationError,
@@ -44,6 +43,14 @@ from .assignment_groups import (
     list_assignment_groups,
     get_assignment_group,
 )
+from .discussion_sync import (
+    pull_discussions,
+    push_discussions,
+)
+from .announcement_sync import (
+    pull_announcements,
+    push_announcements,
+)
 
 __all__ = [
     # Client
@@ -59,9 +66,6 @@ __all__ = [
     "add_styled_table",
     "get_preset_names",
     "get_preset_css",
-    # Server
-    "mcp",
-    "main",
     # Exceptions
     "CanvasMCPError",
     "ConfigurationError",
@@ -84,4 +88,10 @@ __all__ = [
     # Assignment Groups
     "list_assignment_groups",
     "get_assignment_group",
+    # Discussion Sync
+    "pull_discussions",
+    "push_discussions",
+    # Announcement Sync
+    "pull_announcements",
+    "push_announcements",
 ]
