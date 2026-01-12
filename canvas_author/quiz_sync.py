@@ -56,7 +56,7 @@ def pull_quizzes(
 
     Args:
         course_id: Canvas course ID
-        output_dir: Directory to write quiz files
+        output_dir: Directory to write quiz files (quizzes subfolder will be created)
         overwrite: Whether to overwrite existing files
         download_images: Download embedded images to files/ directory
         client: Optional CanvasClient instance
@@ -65,7 +65,9 @@ def pull_quizzes(
         Dict with 'pulled', 'skipped', 'errors', and 'images_downloaded'
     """
     canvas = client or get_canvas_client()
-    output_path = Path(output_dir)
+
+    # Create quizzes subfolder
+    output_path = Path(output_dir) / "quizzes"
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Get domain for URL matching
@@ -166,7 +168,7 @@ def push_quizzes(
 
     Args:
         course_id: Canvas course ID
-        input_dir: Directory containing quiz markdown files
+        input_dir: Directory containing quiz markdown files (or parent dir with quizzes subfolder)
         create_missing: Whether to create quizzes that don't exist on Canvas
         update_existing: Whether to update quizzes that already exist
         upload_images: Upload local images to Canvas
@@ -176,7 +178,12 @@ def push_quizzes(
         Dict with 'created', 'updated', 'skipped', 'errors', and 'images_uploaded'
     """
     canvas = client or get_canvas_client()
+
+    # Check if input_dir has a quizzes subfolder
     input_path = Path(input_dir)
+    quizzes_path = input_path / "quizzes"
+    if quizzes_path.exists():
+        input_path = quizzes_path
 
     result = {
         "created": [],
@@ -364,14 +371,19 @@ def quiz_sync_status(
 
     Args:
         course_id: Canvas course ID
-        local_dir: Directory containing local quiz files
+        local_dir: Directory containing local quiz files (checks for quizzes subfolder)
         client: Optional CanvasClient instance
 
     Returns:
         Dict with 'canvas_only', 'local_only', 'synced', and 'summary'
     """
     canvas = client or get_canvas_client()
+
+    # Check for quizzes subfolder
     local_path = Path(local_dir)
+    quizzes_path = local_path / "quizzes"
+    if quizzes_path.exists():
+        local_path = quizzes_path
 
     # Get Canvas quizzes
     canvas_quizzes = {str(q["id"]): q for q in list_quizzes(course_id, client=canvas)}
