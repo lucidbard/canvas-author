@@ -290,3 +290,43 @@ def bulk_delete_pages(
 
     logger.info(f"Bulk deletion complete: {len(result['deleted'])} deleted, {len(result['failed'])} failed")
     return result
+
+
+
+def delete_page(
+    course_id: str,
+    page_id: str,
+    client: Optional[CanvasClient] = None
+) -> Dict[str, Any]:
+    """
+    Delete a wiki page from Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        page_id: Page URL slug or numeric ID
+        client: Optional CanvasClient instance
+
+    Returns:
+        Dict with success status
+    """
+    canvas = client or get_canvas_client()
+    course = canvas.get_course(course_id)
+
+    try:
+        page = course.get_page(page_id)
+    except ResourceDoesNotExist:
+        raise ResourceNotFoundError("page", page_id)
+
+    try:
+        page.delete()
+        logger.info(f"Deleted page {page_id} from course {course_id}")
+        
+        return {
+            "success": True,
+            "deleted_id": str(page_id),
+            "message": f"Page {page_id} deleted successfully"
+        }
+    except CanvasException as e:
+        logger.error(f"Failed to delete page: {e}")
+        raise
+

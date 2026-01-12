@@ -429,39 +429,143 @@ def get_assignment(course_id: str, assignment_id: str) -> str:
 
 
 @mcp.tool()
-def list_submissions(course_id: str, assignment_id: str) -> str:
+def list_submissions(course_id: str, assignment_id: str, anonymize: bool = True) -> str:
     """
     List all submissions for an assignment.
+    
+    NOTE: By default, student identities are anonymized to protect privacy when
+    using AI assistants. Student names are replaced with anonymous IDs (e.g., "Student 1").
+    Use anonymize=False only when working locally without AI review.
 
     Args:
         course_id: Canvas course ID
         assignment_id: Canvas assignment ID
+        anonymize: Whether to anonymize student identities (default: True for AI privacy)
 
     Returns:
         JSON list of submissions with user info, grades, and status
     """
     try:
         result = assignments.list_submissions(course_id, assignment_id)
+        
+        # Anonymize student information for AI review
+        if anonymize:
+            anonymized = []
+            for idx, submission in enumerate(result, 1):
+                anon_sub = submission.copy()
+                # Replace user info with anonymous ID
+                if 'user' in anon_sub:
+                    anon_sub['user'] = {
+                        'id': f'anon_{idx}',
+                        'name': f'Student {idx}',
+                        'sortable_name': f'Student {idx}'
+                    }
+                # Keep the anonymous user_id for reference
+                anon_sub['user_id'] = f'anon_{idx}'
+                anonymized.append(anon_sub)
+            result = anonymized
+        
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
 @mcp.tool()
-def get_submission(course_id: str, assignment_id: str, user_id: str) -> str:
+def get_submission(course_id: str, assignment_id: str, user_id: str, anonymize: bool = True) -> str:
     """
     Get a specific student's submission.
+    
+    NOTE: By default, student identity is anonymized to protect privacy when
+    using AI assistants. Use anonymize=False only when working locally without AI review.
 
     Args:
         course_id: Canvas course ID
         assignment_id: Canvas assignment ID
         user_id: Student user ID
+        anonymize: Whether to anonymize student identity (default: True for AI privacy)
 
     Returns:
         JSON with submission details including rubric assessment
     """
     try:
         result = assignments.get_submission(course_id, assignment_id, user_id)
+        
+        # Anonymize student information for AI review
+        if anonymize and result:
+            if 'user' in result:
+                result['user'] = {
+                    'id': 'anon_user',
+                    'name': 'Student',
+                    'sortable_name': 'Student'
+                }
+            result['user_id'] = 'anon_user'
+        
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def update_grade(
+    course_id: str,
+    assignment_id: str,
+    user_id: str,
+    grade: str,
+    comment: str = ""
+) -> str:
+    """
+    Update a student's grade for an assignment.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+        user_id: Student user ID
+        grade: Grade to assign (number or letter grade)
+        comment: Optional comment for the student
+
+    Returns:
+        JSON with updated submission info
+    """
+    try:
+        result = assignments.update_grade(course_id, assignment_id, user_id, grade, comment)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def delete_assignment(course_id: str, assignment_id: str) -> str:
+    """
+    Delete an assignment from Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+
+    Returns:
+        JSON with deletion status
+    """
+    try:
+        result = assignments.delete_assignment(course_id, assignment_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def delete_page(course_id: str, page_id: str) -> str:
+    """
+    Delete a wiki page from Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        page_id: Canvas page ID (numeric or URL)
+
+    Returns:
+        JSON with deletion status
+    """
+    try:
+        result = pages.delete_page(course_id, page_id)
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -1364,9 +1468,13 @@ def main():
     print("       pull_quizzes, push_quizzes, quiz_sync_status,")
     print("       pull_modules, push_modules, module_sync_status,")
     print("       pull_course_files, download_pending_files, list_pending_files,")
-    print("       list_courses, list_assignments, get_assignment, list_submissions,")
+    print("       list_courses, list_assignments, get_assignment,")
+    print("       list_submissions, get_submission, update_grade,")
     print("       list_discussions, get_discussion_posts,")
     print("       get_rubric, update_rubric")
+    print()
+    print("NOTE: Submission tools anonymize student data by default for AI privacy.")
+    print("      Use anonymize=False only when working locally without AI review.")
     print()
     mcp.run()
 

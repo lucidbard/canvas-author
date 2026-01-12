@@ -330,3 +330,107 @@ def get_submission(
 
     logger.info(f"Retrieved submission for user {user_id} on assignment {assignment_id}")
     return result
+
+def update_grade(
+    course_id: str,
+    assignment_id: str,
+    user_id: str,
+    grade: str,
+    comment: str = "",
+    client: Optional[CanvasClient] = None
+) -> Dict[str, Any]:
+    """
+    Update a student's grade for an assignment.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+        user_id: Student user ID
+        grade: Grade to assign (number or letter grade)
+        comment: Optional comment for the student
+        client: Optional CanvasClient instance
+
+    Returns:
+        Updated submission data dict
+    """
+    canvas = client or get_canvas_client()
+    course = canvas.get_course(course_id)
+
+    try:
+        assignment = course.get_assignment(assignment_id)
+    except ResourceDoesNotExist:
+        raise ResourceNotFoundError("assignment", assignment_id)
+
+    # Build the submission update data
+    submission_data = {
+        "submission": {
+            "posted_grade": grade
+        }
+    }
+
+    # Add comment if provided
+    if comment:
+        submission_data["comment"] = {
+            "text_comment": comment
+        }
+
+    try:
+        # Update the submission
+        submission = assignment.get_submission(user_id)
+        updated = submission.edit(**submission_data)
+        
+        logger.info(f"Updated grade for user {user_id} on assignment {assignment_id}: {grade}")
+        
+        # Return updated submission data
+        return {
+            "id": str(updated.id),
+            "user_id": str(updated.user_id),
+            "grade": getattr(updated, "grade", None),
+            "score": getattr(updated, "score", None),
+            "workflow_state": getattr(updated, "workflow_state", ""),
+            "success": True
+        }
+    except ResourceDoesNotExist:
+        raise ResourceNotFoundError("submission", user_id, f"Submission not found for user {user_id}")
+    except CanvasException as e:
+        logger.error(f"Failed to update grade: {e}")
+        raise
+
+
+def delete_assignment(
+    course_id: str,
+    assignment_id: str,
+    client: Optional[CanvasClient] = None
+) -> Dict[str, Any]:
+    """
+    Delete an assignment from Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+        client: Optional CanvasClient instance
+
+    Returns:
+        Dict with success status and deleted assignment ID
+    """
+    canvas = client or get_canvas_client()
+    course = canvas.get_course(course_id)
+
+    try:
+        assignment = course.get_assignment(assignment_id)
+    except ResourceDoesNotExist:
+        raise ResourceNotFoundError("assignment", assignment_id)
+
+    try:
+        assignment.delete()
+        logger.info(f"Deleted assignment {assignment_id} from course {course_id}")
+        
+        return {
+            "success": True,
+            "deleted_id": str(assignment_id),
+            "message": f"Assignment {assignment_id} deleted successfully"
+        }
+    except CanvasException as e:
+        logger.error(f"Failed to delete assignment: {e}")
+        raise
+
