@@ -445,22 +445,29 @@ def pull_assignments(
 def push_assignments(
     course_id: str,
     input_dir: str,
+    create_missing: bool = True,
     update_existing: bool = True
 ) -> str:
     """
-    Push local markdown files to Canvas as assignment description updates.
+    Push local markdown files to Canvas as assignments.
+
+    Can create new assignments or update existing ones. If a markdown file has no
+    assignment_id in frontmatter and create_missing is true, a new assignment will
+    be created in Canvas and the file will be updated with the new ID.
 
     Args:
         course_id: Canvas course ID
         input_dir: Directory containing assignment markdown files
+        create_missing: Create assignments that don't exist on Canvas (default: true)
         update_existing: Update assignments that already exist (default: true)
 
     Returns:
-        JSON with results: updated, skipped, errors
+        JSON with results: created, updated, skipped, errors
     """
     try:
         result = assignment_sync.push_assignments(
             course_id, input_dir,
+            create_missing=create_missing,
             update_existing=update_existing
         )
         return json.dumps(result, indent=2)

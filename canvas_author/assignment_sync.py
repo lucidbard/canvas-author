@@ -30,32 +30,37 @@ def create_assignment_frontmatter(
 ) -> str:
     """Create YAML frontmatter for an assignment file."""
     lines = ["---"]
-    lines.append(f"title: \"{assignment.get('name', 'Untitled')}\"")
-    lines.append(f"assignment_id: \"{assignment.get('id', '')}\"")
-    lines.append(f"course_id: \"{course_id}\"")
-    
+    lines.append(f"title: {assignment.get('name', 'Untitled')}")
+
+    if assignment.get('id'):
+        lines.append(f"assignment_id: {assignment['id']}")
+
+    lines.append(f"points_possible: {assignment.get('points_possible', 0)}")
+
     if assignment.get('due_at'):
         lines.append(f"due_at: \"{assignment['due_at']}\"")
     if assignment.get('unlock_at'):
         lines.append(f"unlock_at: \"{assignment['unlock_at']}\"")
     if assignment.get('lock_at'):
         lines.append(f"lock_at: \"{assignment['lock_at']}\"")
-    
-    lines.append(f"points_possible: {assignment.get('points_possible', 0)}")
-    lines.append(f"grading_type: \"{assignment.get('grading_type', 'points')}\"")
-    
+
     # Submission types as a list
     submission_types = assignment.get('submission_types', [])
     if submission_types:
         lines.append("submission_types:")
         for st in submission_types:
             lines.append(f"  - {st}")
-    
+
+    # Allowed extensions (for online_upload submissions)
+    allowed_extensions = assignment.get('allowed_extensions', [])
+    if allowed_extensions:
+        lines.append("allowed_extensions:")
+        for ext in allowed_extensions:
+            lines.append(f"  - {ext}")
+
+    lines.append(f"grading_type: {assignment.get('grading_type', 'points')}")
     lines.append(f"published: {str(assignment.get('published', False)).lower()}")
-    
-    if assignment.get('html_url'):
-        lines.append(f"canvas_url: \"{assignment['html_url']}\"")
-    
+
     lines.append("---")
     lines.append("")
     return "\n".join(lines)
@@ -63,30 +68,30 @@ def create_assignment_frontmatter(
 
 def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     """Parse YAML frontmatter from an assignment markdown file.
-    
+
     Returns:
         Tuple of (metadata dict, body content)
     """
     if not content.startswith("---"):
         return {}, content
-    
+
     # Find the closing ---
     end_idx = content.find("\n---", 3)
     if end_idx == -1:
         return {}, content
-    
+
     frontmatter = content[4:end_idx]  # Skip initial ---\n
     body = content[end_idx + 4:].lstrip("\n")  # Skip closing ---\n
-    
+
     metadata = {}
     current_key = None
     current_list = None
-    
+
     for line in frontmatter.split("\n"):
         line = line.rstrip()
         if not line:
             continue
-        
+
         # Check for list item
         if line.startswith("  - ") and current_key:
             if current_list is None:
@@ -94,22 +99,22 @@ def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
             current_list.append(line[4:])
             metadata[current_key] = current_list
             continue
-        
+
         # Check for key: value
         if ":" in line:
             if current_list is not None:
                 current_list = None
-            
+
             key, _, value = line.partition(":")
             key = key.strip()
             value = value.strip()
-            
+
             # Remove quotes
             if value.startswith('"') and value.endswith('"'):
                 value = value[1:-1]
             elif value.startswith("'") and value.endswith("'"):
                 value = value[1:-1]
-            
+
             # Handle boolean
             if value.lower() == "true":
                 value = True
@@ -120,7 +125,7 @@ def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
                 value = int(value)
             elif re.match(r'^\d+\.\d+$', value):
                 value = float(value)
-            
+
             # Empty value means upcoming list
             if value == "":
                 current_key = key
@@ -129,8 +134,59 @@ def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
             else:
                 metadata[key] = value
                 current_key = key
-    
+
     return metadata, body
+
+
+def _create_assignment_from_markdown(
+    course_id: str,
+    metadata: Dict[str, Any],
+    body: str,
+    client: CanvasClient
+) -> Dict[str, Any]:
+    """Create a new assignment from parsed markdown data."""
+    course = client.get_course(course_id)
+
+    # Convert markdown body to HTML
+    if body and is_pandoc_available():
+        description_html = markdown_to_html(body)
+    else:
+        description_html = body
+
+    # Build assignment parameters from metadata
+    assignment_params = {
+        "name": metadata.get("title", "Untitled Assignment"),
+        "description": description_html,
+        "points_possible": metadata.get("points_possible", 0),
+        "grading_type": metadata.get("grading_type", "points"),
+        "published": metadata.get("published", False),
+    }
+
+    # Add optional date fields
+    if metadata.get("due_at"):
+        assignment_params["due_at"] = metadata["due_at"]
+    if metadata.get("unlock_at"):
+        assignment_params["unlock_at"] = metadata["unlock_at"]
+    if metadata.get("lock_at"):
+        assignment_params["lock_at"] = metadata["lock_at"]
+
+    # Add submission types
+    if metadata.get("submission_types"):
+        assignment_params["submission_types"] = metadata["submission_types"]
+
+    # Add allowed extensions (for file uploads)
+    if metadata.get("allowed_extensions"):
+        assignment_params["allowed_extensions"] = metadata["allowed_extensions"]
+
+    # Create the assignment via Canvas API
+    assignment = course.create_assignment(assignment=assignment_params)
+
+    return {
+        "id": str(assignment.id),
+        "name": assignment.name,
+        "points_possible": assignment.points_possible,
+        "html_url": assignment.html_url if hasattr(assignment, 'html_url') else None,
+    }
 
 
 def pull_assignments(
@@ -208,23 +264,24 @@ def pull_assignments(
 def push_assignments(
     course_id: str,
     input_dir: str,
+    create_missing: bool = True,
     update_existing: bool = True,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
-    Push local markdown files to Canvas as assignment updates.
-    
-    Note: This only updates the description of existing assignments.
-    Creating new assignments requires more parameters and is not supported here.
+    Push local markdown files to Canvas as assignments.
+
+    Can create new assignments or update existing ones based on parameters.
 
     Args:
         course_id: Canvas course ID
         input_dir: Directory containing assignment markdown files (or parent dir with assignments subfolder)
-        update_existing: Update assignments that already exist
+        create_missing: Create assignments that don't exist on Canvas (default: True)
+        update_existing: Update assignments that already exist (default: True)
         client: Optional CanvasClient instance
 
     Returns:
-        Dict with results: updated, skipped, errors
+        Dict with results: created, updated, skipped, errors
     """
     # Check if input_dir has an assignments subfolder
     input_path = Path(input_dir)
@@ -232,7 +289,7 @@ def push_assignments(
     if assignments_path.exists():
         input_path = assignments_path
 
-    results = {"updated": [], "skipped": [], "errors": []}
+    results = {"created": [], "updated": [], "skipped": [], "errors": []}
 
     if not input_path.exists():
         return results
@@ -248,37 +305,61 @@ def push_assignments(
             content = file_path.read_text(encoding="utf-8")
             metadata, body = parse_assignment_frontmatter(content)
 
+            title = metadata.get("title", file_path.stem)
             assignment_id = metadata.get("assignment_id")
-            if not assignment_id:
-                results["skipped"].append({
-                    "file": str(file_path),
-                    "reason": "no assignment_id in frontmatter"
-                })
-                continue
 
-            if not update_existing:
-                results["skipped"].append({
-                    "file": str(file_path),
-                    "reason": "update_existing is false"
-                })
-                continue
+            if assignment_id:
+                # Assignment exists - update if allowed
+                if not update_existing:
+                    results["skipped"].append({
+                        "file": str(file_path),
+                        "reason": "update_existing is false"
+                    })
+                    continue
 
-            # Convert markdown body to HTML
-            if body and is_pandoc_available():
-                description_html = markdown_to_html(body)
+                # Convert markdown body to HTML
+                if body and is_pandoc_available():
+                    description_html = markdown_to_html(body)
+                else:
+                    description_html = body
+
+                # Update the assignment
+                assignment = course.get_assignment(assignment_id)
+                assignment.edit(assignment={"description": description_html})
+
+                results["updated"].append({
+                    "id": assignment_id,
+                    "name": title,
+                    "file": str(file_path)
+                })
+                logger.info(f"Updated assignment '{title}' from {file_path.name}")
+
             else:
-                description_html = body
+                # Assignment doesn't exist - create if allowed
+                if not create_missing:
+                    results["skipped"].append({
+                        "file": str(file_path),
+                        "reason": "no assignment_id and create_missing is false"
+                    })
+                    continue
 
-            # Update the assignment
-            assignment = course.get_assignment(assignment_id)
-            assignment.edit(assignment={"description": description_html})
+                new_assignment = _create_assignment_from_markdown(
+                    course_id, metadata, body, canvas
+                )
 
-            results["updated"].append({
-                "id": assignment_id,
-                "name": metadata.get("title", file_path.stem),
-                "file": str(file_path)
-            })
-            logger.info(f"Pushed assignment '{file_path.name}' to Canvas")
+                # Update the file with the new assignment_id
+                metadata["assignment_id"] = new_assignment["id"]
+                updated_content = create_assignment_frontmatter(new_assignment, course_id)
+                updated_content += body
+                file_path.write_text(updated_content, encoding="utf-8")
+
+                results["created"].append({
+                    "id": new_assignment["id"],
+                    "name": title,
+                    "file": str(file_path),
+                    "url": new_assignment.get("html_url")
+                })
+                logger.info(f"Created assignment '{title}' from {file_path.name}")
 
         except Exception as e:
             results["errors"].append({
@@ -287,7 +368,7 @@ def push_assignments(
             })
             logger.error(f"Error pushing assignment {file_path}: {e}")
 
-    logger.info(f"Push complete: {len(results['updated'])} updated, {len(results['skipped'])} skipped, {len(results['errors'])} errors")
+    logger.info(f"Push complete: {len(results['created'])} created, {len(results['updated'])} updated, {len(results['skipped'])} skipped, {len(results['errors'])} errors")
     return results
 
 
