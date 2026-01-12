@@ -175,6 +175,7 @@ def create_quiz(
     title: str,
     description: str = "",
     quiz_type: str = "assignment",
+    points_possible: Optional[float] = None,
     time_limit: Optional[int] = None,
     shuffle_answers: bool = False,
     published: bool = False,
@@ -216,6 +217,8 @@ def create_quiz(
         "allowed_attempts": allowed_attempts,
     }
 
+    if points_possible is not None:
+        quiz_data["points_possible"] = points_possible
     if time_limit is not None:
         quiz_data["time_limit"] = time_limit
     if due_at:
@@ -242,6 +245,7 @@ def update_quiz(
     quiz_id: str,
     title: Optional[str] = None,
     description: Optional[str] = None,
+    points_possible: Optional[float] = None,
     time_limit: Optional[int] = None,
     shuffle_answers: Optional[bool] = None,
     published: Optional[bool] = None,
@@ -278,6 +282,8 @@ def update_quiz(
         update_data["title"] = title
     if description is not None:
         update_data["description"] = description
+    if points_possible is not None:
+        update_data["points_possible"] = points_possible
     if time_limit is not None:
         update_data["time_limit"] = time_limit
     if shuffle_answers is not None:
