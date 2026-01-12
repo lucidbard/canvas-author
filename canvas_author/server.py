@@ -150,6 +150,26 @@ def delete_page(course_id: str, page_url: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+def bulk_delete_pages(course_id: str, page_urls: str) -> str:
+    """
+    Delete multiple wiki pages efficiently.
+
+    Args:
+        course_id: Canvas course ID
+        page_urls: Comma-separated list of page URL slugs to delete
+
+    Returns:
+        JSON with deleted, failed, and errors lists
+    """
+    try:
+        urls_list = [url.strip() for url in page_urls.split(",")]
+        result = pages.bulk_delete_pages(course_id, urls_list)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # =============================================================================
 # Page Sync Tools
 # =============================================================================

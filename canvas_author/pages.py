@@ -240,3 +240,53 @@ def delete_page(
     page.delete()
     logger.info(f"Deleted page '{page_url}' from course {course_id}")
     return True
+
+
+def bulk_delete_pages(
+    course_id: str,
+    page_urls: List[str],
+    client: Optional[CanvasClient] = None
+) -> Dict[str, Any]:
+    """
+    Delete multiple wiki pages efficiently.
+
+    Args:
+        course_id: Canvas course ID
+        page_urls: List of page URL slugs to delete
+        client: Optional CanvasClient instance
+
+    Returns:
+        Dict with 'deleted', 'failed', and 'errors' lists
+    """
+    canvas = client or get_canvas_client()
+    course = canvas.get_course(course_id)
+
+    result = {
+        "deleted": [],
+        "failed": [],
+        "errors": [],
+    }
+
+    for page_url in page_urls:
+        try:
+            page = course.get_page(page_url)
+            page.delete()
+            result["deleted"].append(page_url)
+            logger.info(f"Deleted page '{page_url}' from course {course_id}")
+        except ResourceDoesNotExist:
+            result["failed"].append(page_url)
+            result["errors"].append({
+                "page_url": page_url,
+                "error": "Page not found"
+            })
+            logger.warning(f"Page '{page_url}' not found in course {course_id}")
+        except Exception as e:
+            result["failed"].append(page_url)
+            result["errors"].append({
+                "page_url": page_url,
+                "error": str(e)
+            })
+            logger.error(f"Error deleting page '{page_url}': {e}")
+
+    logger.info(f"Bulk deletion complete: {len(result['deleted'])} deleted, {len(result['failed'])} failed")
+    return result
