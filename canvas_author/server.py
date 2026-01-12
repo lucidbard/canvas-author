@@ -11,7 +11,7 @@ from typing import Optional
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module
+from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module
 from .pandoc import is_pandoc_available
 
 logger = logging.getLogger("canvas_author.server")
@@ -334,6 +334,28 @@ def course_status(course_id: str, directory: str) -> str:
     """
     try:
         result = course_sync.course_status(course_id, directory)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# Assignment Groups Tools
+# =============================================================================
+
+@mcp.tool()
+def list_assignment_groups(course_id: str) -> str:
+    """
+    List all assignment groups in a course.
+
+    Args:
+        course_id: Canvas course ID
+
+    Returns:
+        JSON list of assignment groups with id, name, position, group_weight
+    """
+    try:
+        result = assignment_groups.list_assignment_groups(course_id)
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})

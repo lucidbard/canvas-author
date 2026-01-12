@@ -35,6 +35,9 @@ def create_assignment_frontmatter(
     if assignment.get('id'):
         lines.append(f"assignment_id: {assignment['id']}")
 
+    if assignment.get('assignment_group_id'):
+        lines.append(f"assignment_group_id: {assignment['assignment_group_id']}")
+
     lines.append(f"points_possible: {assignment.get('points_possible', 0)}")
 
     if assignment.get('due_at'):

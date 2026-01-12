@@ -40,6 +40,10 @@ from .quiz_sync import (
     push_quizzes,
     quiz_sync_status,
 )
+from .assignment_groups import (
+    list_assignment_groups,
+    get_assignment_group,
+)
 
 __all__ = [
     # Client
@@ -77,4 +81,7 @@ __all__ = [
     "pull_quizzes",
     "push_quizzes",
     "quiz_sync_status",
+    # Assignment Groups
+    "list_assignment_groups",
+    "get_assignment_group",
 ]

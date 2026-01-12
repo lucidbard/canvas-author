@@ -20,6 +20,7 @@ ASSIGNMENT_FIELDS = [
     "points_possible", "grading_type", "submission_types", "published",
     "html_url", "has_submitted_submissions", "needs_grading_count",
     "peer_reviews", "automatic_peer_reviews", "workflow_state",
+    "assignment_group_id",
 ]
 
 

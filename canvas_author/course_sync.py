@@ -13,6 +13,7 @@ from datetime import datetime
 import yaml
 
 from .client import get_canvas_client, CanvasClient
+from .assignment_groups import list_assignment_groups
 
 logger = logging.getLogger("canvas_author.course_sync")
 
@@ -91,6 +92,9 @@ def pull_course(
     except Exception:
         canvas_settings["front_page"] = None
 
+    # Get assignment groups
+    assignment_groups_list = list_assignment_groups(course_id, client=canvas)
+
     # Check for existing local file
     local_settings = {}
     conflicts = []
@@ -119,6 +123,7 @@ def pull_course(
             "domain": canvas.domain,
         },
         "settings": canvas_settings,
+        "assignment_groups": assignment_groups_list,
         "sync": {
             "last_pull": datetime.utcnow().isoformat() + "Z",
         }
