@@ -75,7 +75,7 @@ from .assignments import list_courses
 from .frontmatter import parse_frontmatter, generate_frontmatter
 from .sync import predict_canvas_url, update_internal_links
 from .exceptions import URLMismatchError
-from . import quiz_sync, quizzes, module_sync, course_sync, rubric_sync, submission_sync
+from . import quiz_sync, quizzes, module_sync, course_sync, rubric_sync, submission_sync, discussion_sync, announcement_sync
 
 # Config filename
 CONFIG_FILE = ".canvas.json"
@@ -1212,6 +1212,155 @@ def cmd_rubric_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pull_discussions(args: argparse.Namespace) -> int:
+    """Pull discussions from Canvas."""
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-author init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    course_name = config.get("course_name", course_id)
+
+    print(f"Pulling discussions from course: {course_name}")
+
+    try:
+        results = discussion_sync.pull_discussions(
+            course_id,
+            str(directory),
+            overwrite=args.force,
+            only_announcements=False
+        )
+
+        print(f"\nPulled: {len(results['pulled'])}, Skipped: {len(results['skipped'])}, Errors: {len(results['errors'])}")
+
+        if results['errors']:
+            print("\nErrors:")
+            for error in results['errors']:
+                print(f"  - {error['title']}: {error['error']}")
+            return 1
+
+        return 0
+    except Exception as e:
+        print(f"Error pulling discussions: {e}")
+        return 1
+
+
+def cmd_push_discussions(args: argparse.Namespace) -> int:
+    """Push discussions to Canvas."""
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-author init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    course_name = config.get("course_name", course_id)
+
+    print(f"Pushing discussions to course: {course_name}")
+
+    create_missing = not args.update_only
+    update_existing = not args.create_only
+
+    try:
+        results = discussion_sync.push_discussions(
+            course_id,
+            str(directory),
+            create_missing=create_missing,
+            update_existing=update_existing,
+            is_announcements=False
+        )
+
+        print(f"\nCreated: {len(results['created'])}, Updated: {len(results['updated'])}, "
+              f"Skipped: {len(results['skipped'])}, Errors: {len(results['errors'])}")
+
+        if results['errors']:
+            print("\nErrors:")
+            for error in results['errors']:
+                print(f"  - {error.get('file', 'unknown')}: {error['error']}")
+            return 1
+
+        return 0
+    except Exception as e:
+        print(f"Error pushing discussions: {e}")
+        return 1
+
+
+def cmd_pull_announcements(args: argparse.Namespace) -> int:
+    """Pull announcements from Canvas."""
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-author init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    course_name = config.get("course_name", course_id)
+
+    print(f"Pulling announcements from course: {course_name}")
+
+    try:
+        results = announcement_sync.pull_announcements(
+            course_id,
+            str(directory),
+            overwrite=args.force,
+            limit=args.limit if hasattr(args, 'limit') else 50
+        )
+
+        print(f"\nPulled: {len(results['pulled'])}, Skipped: {len(results['skipped'])}, Errors: {len(results['errors'])}")
+
+        if results['errors']:
+            print("\nErrors:")
+            for error in results['errors']:
+                print(f"  - {error['title']}: {error['error']}")
+            return 1
+
+        return 0
+    except Exception as e:
+        print(f"Error pulling announcements: {e}")
+        return 1
+
+
+def cmd_push_announcements(args: argparse.Namespace) -> int:
+    """Push announcements to Canvas."""
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized. Run 'canvas-author init COURSE_ID --dir {directory}' first")
+        return 1
+
+    course_id = config["course_id"]
+    course_name = config.get("course_name", course_id)
+
+    print(f"Pushing announcements to course: {course_name}")
+
+    create_missing = not args.update_only
+    update_existing = not args.create_only
+
+    try:
+        results = announcement_sync.push_announcements(
+            course_id,
+            str(directory),
+            create_missing=create_missing,
+            update_existing=update_existing
+        )
+
+        print(f"\nCreated: {len(results['created'])}, Updated: {len(results['updated'])}, "
+              f"Skipped: {len(results['skipped'])}, Errors: {len(results['errors'])}")
+
+        if results['errors']:
+            print("\nErrors:")
+            for error in results['errors']:
+                print(f"  - {error.get('file', 'unknown')}: {error['error']}")
+            return 1
+
+        return 0
+    except Exception as e:
+        print(f"Error pushing announcements: {e}")
+        return 1
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1332,6 +1481,29 @@ def main() -> int:
     submission_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
     submission_status_parser.add_argument("--assignment", "-a", required=True, help="Assignment ID")
 
+    # pull-discussions command
+    pull_discussions_parser = subparsers.add_parser("pull-discussions", help="Pull discussions from Canvas")
+    pull_discussions_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    pull_discussions_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+
+    # push-discussions command
+    push_discussions_parser = subparsers.add_parser("push-discussions", help="Push discussions to Canvas")
+    push_discussions_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_discussions_parser.add_argument("--create-only", action="store_true", help="Only create new discussions")
+    push_discussions_parser.add_argument("--update-only", action="store_true", help="Only update existing discussions")
+
+    # pull-announcements command
+    pull_announcements_parser = subparsers.add_parser("pull-announcements", help="Pull announcements from Canvas")
+    pull_announcements_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    pull_announcements_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+    pull_announcements_parser.add_argument("--limit", "-l", type=int, default=50, help="Maximum number to pull (default: 50)")
+
+    # push-announcements command
+    push_announcements_parser = subparsers.add_parser("push-announcements", help="Push announcements to Canvas")
+    push_announcements_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_announcements_parser.add_argument("--create-only", action="store_true", help="Only create new announcements")
+    push_announcements_parser.add_argument("--update-only", action="store_true", help="Only update existing announcements")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -1384,6 +1556,14 @@ def main() -> int:
         return cmd_pull_submissions(args)
     elif args.command == "submission-status":
         return cmd_submission_status(args)
+    elif args.command == "pull-discussions":
+        return cmd_pull_discussions(args)
+    elif args.command == "push-discussions":
+        return cmd_push_discussions(args)
+    elif args.command == "pull-announcements":
+        return cmd_pull_announcements(args)
+    elif args.command == "push-announcements":
+        return cmd_push_announcements(args)
 
     return 0
 

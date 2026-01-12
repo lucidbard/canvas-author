@@ -11,7 +11,7 @@ from typing import Optional
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module
+from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module, discussion_sync, announcement_sync
 from .pandoc import is_pandoc_available
 
 logger = logging.getLogger("canvas_author.server")
@@ -617,6 +617,210 @@ def get_posts_by_user(course_id: str, discussion_id: str) -> str:
     """
     try:
         result = discussions.get_posts_by_user(course_id, discussion_id, as_markdown=True)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def create_discussion(
+    course_id: str,
+    title: str,
+    message: str,
+    published: bool = True,
+    require_initial_post: bool = False,
+    is_announcement: bool = False
+) -> str:
+    """
+    Create a new discussion topic or announcement.
+
+    Args:
+        course_id: Canvas course ID
+        title: Discussion title
+        message: Discussion message (HTML or markdown)
+        published: Whether to publish immediately (default: True)
+        require_initial_post: Students must post before seeing others (default: False)
+        is_announcement: Create as announcement instead of discussion (default: False)
+
+    Returns:
+        JSON with created discussion data including id and html_url
+    """
+    try:
+        result = discussions.create_discussion(
+            course_id,
+            title,
+            message,
+            published=published,
+            require_initial_post=require_initial_post,
+            is_announcement=is_announcement
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def update_discussion(
+    course_id: str,
+    discussion_id: str,
+    title: Optional[str] = None,
+    message: Optional[str] = None,
+    published: Optional[bool] = None
+) -> str:
+    """
+    Update an existing discussion topic.
+
+    Args:
+        course_id: Canvas course ID
+        discussion_id: Discussion topic ID
+        title: New title (optional)
+        message: New message (HTML or markdown, optional)
+        published: Publication status (optional)
+
+    Returns:
+        JSON with updated discussion data
+    """
+    try:
+        result = discussions.update_discussion(
+            course_id,
+            discussion_id,
+            title=title,
+            message=message,
+            published=published
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def delete_discussion(course_id: str, discussion_id: str) -> str:
+    """
+    Delete a discussion topic.
+
+    Args:
+        course_id: Canvas course ID
+        discussion_id: Discussion topic ID
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        result = discussions.delete_discussion(course_id, discussion_id)
+        return json.dumps({"success": result})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def pull_discussions(course_id: str, output_dir: str, overwrite: bool = False) -> str:
+    """
+    Pull all discussions from Canvas to local markdown files.
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save files (discussions subfolder will be created)
+        overwrite: Overwrite existing files (default: False)
+
+    Returns:
+        JSON with results: pulled, skipped, errors
+    """
+    try:
+        result = discussion_sync.pull_discussions(
+            course_id,
+            output_dir,
+            overwrite=overwrite,
+            only_announcements=False
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_discussions(
+    course_id: str,
+    input_dir: str,
+    create_missing: bool = True,
+    update_existing: bool = True
+) -> str:
+    """
+    Push local markdown files to Canvas as discussions.
+
+    Args:
+        course_id: Canvas course ID
+        input_dir: Directory containing discussion markdown files
+        create_missing: Create discussions that don't exist (default: True)
+        update_existing: Update existing discussions (default: True)
+
+    Returns:
+        JSON with results: created, updated, skipped, errors
+    """
+    try:
+        result = discussion_sync.push_discussions(
+            course_id,
+            input_dir,
+            create_missing=create_missing,
+            update_existing=update_existing,
+            is_announcements=False
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def pull_announcements(course_id: str, output_dir: str, overwrite: bool = False, limit: int = 50) -> str:
+    """
+    Pull announcements from Canvas to local markdown files.
+
+    Args:
+        course_id: Canvas course ID
+        output_dir: Directory to save files (announcements subfolder will be created)
+        overwrite: Overwrite existing files (default: False)
+        limit: Maximum number of announcements to pull (default: 50)
+
+    Returns:
+        JSON with results: pulled, skipped, errors
+    """
+    try:
+        result = announcement_sync.pull_announcements(
+            course_id,
+            output_dir,
+            overwrite=overwrite,
+            limit=limit
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def push_announcements(
+    course_id: str,
+    input_dir: str,
+    create_missing: bool = True,
+    update_existing: bool = True
+) -> str:
+    """
+    Push local markdown files to Canvas as announcements.
+
+    Args:
+        course_id: Canvas course ID
+        input_dir: Directory containing announcement markdown files
+        create_missing: Create announcements that don't exist (default: True)
+        update_existing: Update existing announcements (default: True)
+
+    Returns:
+        JSON with results: created, updated, skipped, errors
+    """
+    try:
+        result = announcement_sync.push_announcements(
+            course_id,
+            input_dir,
+            create_missing=create_missing,
+            update_existing=update_existing
+        )
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
