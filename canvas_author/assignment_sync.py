@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from .client import get_canvas_client, CanvasClient
 from .assignments import list_assignments, get_assignment
 from .pandoc import html_to_markdown, markdown_to_html, is_pandoc_available
+from .datetime_utils import convert_to_iso8601, convert_from_iso8601, convert_to_datetime
 
 logger = logging.getLogger("canvas_author.assignment_sync")
 
@@ -40,12 +41,19 @@ def create_assignment_frontmatter(
 
     lines.append(f"points_possible: {assignment.get('points_possible', 0)}")
 
+    # Convert datetime fields from ISO 8601 to simple format
     if assignment.get('due_at'):
-        lines.append(f"due_at: \"{assignment['due_at']}\"")
+        due_at = convert_from_iso8601(assignment['due_at'])
+        if due_at:
+            lines.append(f"due_at: \"{due_at}\"")
     if assignment.get('unlock_at'):
-        lines.append(f"unlock_at: \"{assignment['unlock_at']}\"")
+        unlock_at = convert_from_iso8601(assignment['unlock_at'])
+        if unlock_at:
+            lines.append(f"unlock_at: \"{unlock_at}\"")
     if assignment.get('lock_at'):
-        lines.append(f"lock_at: \"{assignment['lock_at']}\"")
+        lock_at = convert_from_iso8601(assignment['lock_at'])
+        if lock_at:
+            lines.append(f"lock_at: \"{lock_at}\"")
 
     # Submission types as a list
     submission_types = assignment.get('submission_types', [])
@@ -165,13 +173,20 @@ def _create_assignment_from_markdown(
         "published": metadata.get("published", False),
     }
 
-    # Add optional date fields
+    # NOTE: Canvas API appears to have issues accepting due_at, unlock_at, and lock_at
+    # during assignment creation. We'll create the assignment first, then update dates separately.
+    has_dates = bool(metadata.get("due_at") or metadata.get("unlock_at") or metadata.get("lock_at"))
+    date_params = {}
+
     if metadata.get("due_at"):
-        assignment_params["due_at"] = metadata["due_at"]
+        logger.info(f"Will set due_at after creation: '{metadata.get('due_at')}'")
+        date_params["due_at"] = convert_to_iso8601(metadata["due_at"], use_utc=True)
     if metadata.get("unlock_at"):
-        assignment_params["unlock_at"] = metadata["unlock_at"]
+        logger.info(f"Will set unlock_at after creation: '{metadata.get('unlock_at')}'")
+        date_params["unlock_at"] = convert_to_iso8601(metadata["unlock_at"], use_utc=True)
     if metadata.get("lock_at"):
-        assignment_params["lock_at"] = metadata["lock_at"]
+        logger.info(f"Will set lock_at after creation: '{metadata.get('lock_at')}'")
+        date_params["lock_at"] = convert_to_iso8601(metadata["lock_at"], use_utc=True)
 
     # Add submission types
     if metadata.get("submission_types"):
@@ -181,8 +196,15 @@ def _create_assignment_from_markdown(
     if metadata.get("allowed_extensions"):
         assignment_params["allowed_extensions"] = metadata["allowed_extensions"]
 
+    logger.info(f"Creating assignment '{metadata.get('title')}' with params: {assignment_params}")
+
     # Create the assignment via Canvas API
     assignment = course.create_assignment(assignment=assignment_params)
+
+    # Update with dates separately if present
+    if has_dates:
+        logger.info(f"Updating assignment {assignment.id} with dates: {date_params}")
+        assignment = assignment.edit(assignment=date_params)
 
     return {
         "id": str(assignment.id),
@@ -326,9 +348,35 @@ def push_assignments(
                 else:
                     description_html = body
 
+                # Build update parameters from metadata
+                update_params = {
+                    "description": description_html,
+                }
+
+                # Add optional fields if present in metadata
+                if "points_possible" in metadata:
+                    update_params["points_possible"] = metadata["points_possible"]
+                if "grading_type" in metadata:
+                    update_params["grading_type"] = metadata["grading_type"]
+                if "published" in metadata:
+                    update_params["published"] = metadata["published"]
+                if "submission_types" in metadata:
+                    update_params["submission_types"] = metadata["submission_types"]
+                if "allowed_extensions" in metadata:
+                    update_params["allowed_extensions"] = metadata["allowed_extensions"]
+
+                # Add date fields with ISO 8601 conversion (UTC format with 'Z')
+                if metadata.get("due_at"):
+                    update_params["due_at"] = convert_to_iso8601(metadata["due_at"], use_utc=True)
+                if metadata.get("unlock_at"):
+                    update_params["unlock_at"] = convert_to_iso8601(metadata["unlock_at"], use_utc=True)
+                if metadata.get("lock_at"):
+                    update_params["lock_at"] = convert_to_iso8601(metadata["lock_at"], use_utc=True)
+
                 # Update the assignment
                 assignment = course.get_assignment(assignment_id)
-                assignment.edit(assignment={"description": description_html})
+                logger.debug(f"Update params for assignment {assignment_id}: {update_params}")
+                assignment.edit(assignment=update_params)
 
                 results["updated"].append({
                     "id": assignment_id,
