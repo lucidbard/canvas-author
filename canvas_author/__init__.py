@@ -51,6 +51,21 @@ from .announcement_sync import (
     pull_announcements,
     push_announcements,
 )
+from .workflow import (
+    WorkflowManager,
+    WorktreeReviewSession,
+    ItemReview,
+    ReviewPass,
+    create_agent_worktree,
+)
+from .tool_access import (
+    get_agent_context,
+    get_allowed_tools,
+    require_agent_role,
+    require_scope,
+    check_tool_access,
+    ToolAccessError,
+)
 
 __all__ = [
     # Client
@@ -94,4 +109,17 @@ __all__ = [
     # Announcement Sync
     "pull_announcements",
     "push_announcements",
+    # Workflow
+    "WorkflowManager",
+    "WorktreeReviewSession",
+    "ItemReview",
+    "ReviewPass",
+    "create_agent_worktree",
+    # Tool Access Control
+    "get_agent_context",
+    "get_allowed_tools",
+    "require_agent_role",
+    "require_scope",
+    "check_tool_access",
+    "ToolAccessError",
 ]

@@ -1,0 +1,161 @@
+# Canvas Author Workflow Configuration
+# 
+# This file defines the multi-agent review workflow for course content.
+# Different content types can have different approval requirements.
+#
+# Review Pass Types:
+#   - style: Checks tone, grammar, consistency with course voice
+#   - fact_check: Verifies claims, sources, accuracy
+#   - consistency: Validates integration with modules, prerequisites, alignment
+
+workflows:
+  pages:
+    name: "Wiki Pages"
+    required_passes:
+      - style
+      - fact_check
+      - consistency
+    required_approvals: 1
+    approval_type: "consensus"  # or "single", "sequence"
+    description: "Pages require all three review passes before merge to main"
+
+  quizzes:
+    name: "Quizzes"
+    required_passes:
+      - style
+      - fact_check
+      - consistency
+    required_approvals: 2
+    approval_type: "consensus"
+    description: "Quizzes require 2 reviewers to approve across all passes"
+
+  assignments:
+    name: "Assignments"
+    required_passes:
+      - fact_check
+      - consistency
+      - style
+    required_approvals: 2
+    approval_type: "consensus"
+    description: "Assignments require 2 reviewers; fact-check comes first"
+
+  rubrics:
+    name: "Rubrics"
+    required_passes:
+      - consistency
+      - style
+    required_approvals: 1
+    approval_type: "single"
+    description: "Rubrics need consistency (with criteria from other rubrics) and style review"
+
+  discussions:
+    name: "Discussions"
+    required_passes:
+      - style
+      - fact_check
+    required_approvals: 1
+    approval_type: "consensus"
+    description: "Discussions require style and fact-check before merge"
+
+# Agent Roles & Tool Access Control
+# 
+# Tool restrictions are applied at worktree creation time.
+# Agents are assigned a role that determines which MCP tools they can call.
+
+agent_roles:
+  content_agent:
+    description: "Can create and modify content"
+    allowed_tools:
+      - "list_*"  # All read-only tools
+      - "get_*"
+      - "create_*"
+      - "update_*"
+      - "delete_*"
+      - "pull_*"
+      - "push_*"
+    restricted_tools:
+      - "submit_*_review"
+      - "approve_and_merge_worktree"
+      - "escalate_review_conflict"
+
+  style_agent:
+    description: "Reviews tone, grammar, consistency with course voice"
+    allowed_tools:
+      - "list_*"  # Read-only tools
+      - "get_*"
+      - "submit_style_review"
+      - "get_item_review_history"
+      - "get_worktree_review_status"
+      - "get_review_conflicts"
+    restricted_tools:
+      - "create_*"
+      - "update_*"
+      - "delete_*"
+      - "push_*"
+
+  fact_check_agent:
+    description: "Verifies claims, sources, and accuracy"
+    allowed_tools:
+      - "list_*"  # Read-only tools
+      - "get_*"
+      - "submit_fact_check_review"
+      - "get_item_review_history"
+      - "get_worktree_review_status"
+      - "get_review_conflicts"
+    restricted_tools:
+      - "create_*"
+      - "update_*"
+      - "delete_*"
+      - "push_*"
+
+  consistency_agent:
+    description: "Validates integration across modules, prerequisites, alignment"
+    allowed_tools:
+      - "list_*"  # Read-only tools
+      - "get_*"
+      - "submit_consistency_review"
+      - "get_item_review_history"
+      - "get_worktree_review_status"
+      - "get_review_conflicts"
+    restricted_tools:
+      - "create_*"
+      - "update_*"
+      - "delete_*"
+      - "push_*"
+
+  approval_agent:
+    description: "Can view reviews, vote on consensus, and merge worktrees"
+    allowed_tools:
+      - "list_*"  # Read-only tools
+      - "get_*"
+      - "submit_*_review"
+      - "get_item_review_history"
+      - "get_worktree_review_status"
+      - "get_review_conflicts"
+      - "escalate_review_conflict"
+      - "approve_and_merge_worktree"
+    restricted_tools:
+      - "create_*"
+      - "update_*"
+      - "delete_*"
+      - "push_*"
+
+# Escalation Rules
+# 
+# When reviews conflict or consensus cannot be reached, escalate to human.
+
+escalation:
+  pause_on_conflict: true  # Pause worktree merge if reviewers disagree
+  human_review_required: true  # Require human to resolve conflicts
+  escalation_timeout_hours: 24  # Escalations auto-close after 24 hours if unresolved
+  notify_on_escalation: true  # Send notification when escalation created
+
+# Merge Strategy
+#
+# After approval, how should worktrees be merged back to main?
+
+merge:
+  strategy: "squash"  # "squash", "rebase", or "merge"
+  auto_archive: true  # Archive reviews after merge
+  keep_worktree: false  # Delete worktree after merge
+  commit_message_template: "Merge {worktree_name}\n\nReviewed and approved by:\n{reviewer_list}"

@@ -7,12 +7,20 @@ discussions, and rubrics with markdown support via pandoc.
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
 from mcp.server import FastMCP
 
 from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module, discussion_sync, announcement_sync
 from .pandoc import is_pandoc_available
+from .workflow import (
+    WorkflowManager,
+    WorktreeReviewSession,
+    ItemReview,
+    ReviewPass,
+    create_agent_worktree
+)
 
 logger = logging.getLogger("canvas_author.server")
 
@@ -1455,6 +1463,541 @@ def list_pending_files(files_dir: str) -> str:
     try:
         result = files_module.list_pending_files(files_dir)
         return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# Workflow & Review Tools (Multi-Agent Review System)
+# =============================================================================
+
+@mcp.tool()
+def create_agent_worktree_tool(
+    course_id: str,
+    course_path: str,
+    agent_name: str,
+    agent_role: str,
+    scope: str
+) -> str:
+    """
+    Create a new git worktree for an agent with role-based tool restrictions.
+    
+    Args:
+        course_id: Canvas course ID
+        course_path: Path to course directory
+        agent_name: Name/ID of the agent (e.g., 'copilot-grading')
+        agent_role: Role of agent (content_agent, style_agent, fact_check_agent, consistency_agent, approval_agent)
+        scope: Comma-separated list of content types (e.g., 'pages,quizzes')
+    
+    Returns:
+        JSON with worktree info and allowed/restricted tools
+    """
+    try:
+        scope_list = [s.strip() for s in scope.split(",")]
+        result = create_agent_worktree(course_id, course_path, agent_name, agent_role, scope_list)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def submit_style_review(
+    course_id: str,
+    course_path: str,
+    worktree_name: str,
+    item_id: str,
+    item_title: str,
+    item_type: str,
+    canvas_id: str,
+    file_path: str,
+    agent_id: str,
+    decision: str,
+    reasoning: str,
+    severity: str = "medium"
+) -> str:
+    """
+    Submit a style review pass for an item (tone, grammar, consistency).
+    
+    Args:
+        course_id: Canvas course ID
+        course_path: Path to course directory
+        worktree_name: Name of the worktree being reviewed
+        item_id: Unified item ID (e.g., 'page:12345')
+        item_title: Human-readable item title
+        item_type: Type of item (page, quiz, assignment, rubric)
+        canvas_id: Canvas object ID
+        file_path: Local file path
+        agent_id: ID of reviewing agent
+        decision: approved, rejected, needs_revision
+        reasoning: Explanation of the review decision
+        severity: low, medium, high
+    
+    Returns:
+        JSON with review result
+    """
+    try:
+        wm = WorkflowManager(course_path)
+        
+        # Create or load session
+        session = None
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                break
+            except:
+                pass
+        
+        if not session:
+            session = WorktreeReviewSession(worktree_name, course_id)
+        
+        # Add or update item review
+        item_review = session.get_item_review(item_id)
+        if not item_review:
+            item_review = ItemReview(item_id, item_title, item_type, canvas_id, file_path)
+        
+        review_pass = ReviewPass(
+            pass_type="style",
+            agent_id=agent_id,
+            agent_role="style_agent",
+            decision=decision,
+            reasoning=reasoning,
+            severity=severity
+        )
+        item_review.add_pass(review_pass)
+        session.add_item_review(item_review)
+        
+        # Save session
+        wm.save_review_session(session)
+        
+        return json.dumps({
+            "status": "success",
+            "review_pass": review_pass.to_dict(),
+            "item_status": item_review.get_status()
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def submit_fact_check_review(
+    course_id: str,
+    course_path: str,
+    worktree_name: str,
+    item_id: str,
+    item_title: str,
+    item_type: str,
+    canvas_id: str,
+    file_path: str,
+    agent_id: str,
+    decision: str,
+    reasoning: str,
+    references: str = "",
+    severity: str = "medium"
+) -> str:
+    """
+    Submit a fact-check review pass for an item (claims, sources, accuracy).
+    
+    Args:
+        course_id: Canvas course ID
+        course_path: Path to course directory
+        worktree_name: Name of the worktree being reviewed
+        item_id: Unified item ID (e.g., 'page:12345')
+        item_title: Human-readable item title
+        item_type: Type of item (page, quiz, assignment, rubric)
+        canvas_id: Canvas object ID
+        file_path: Local file path
+        agent_id: ID of reviewing agent
+        decision: approved, rejected, needs_revision
+        reasoning: Explanation of what was fact-checked
+        references: Comma-separated list of related item IDs
+        severity: low, medium, high
+    
+    Returns:
+        JSON with review result
+    """
+    try:
+        wm = WorkflowManager(course_path)
+        
+        # Create or load session
+        session = None
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                break
+            except:
+                pass
+        
+        if not session:
+            session = WorktreeReviewSession(worktree_name, course_id)
+        
+        # Add or update item review
+        item_review = session.get_item_review(item_id)
+        if not item_review:
+            item_review = ItemReview(item_id, item_title, item_type, canvas_id, file_path)
+        
+        ref_list = [r.strip() for r in references.split(",")] if references else []
+        
+        review_pass = ReviewPass(
+            pass_type="fact_check",
+            agent_id=agent_id,
+            agent_role="fact_check_agent",
+            decision=decision,
+            reasoning=reasoning,
+            references=ref_list,
+            severity=severity
+        )
+        item_review.add_pass(review_pass)
+        session.add_item_review(item_review)
+        
+        # Save session
+        wm.save_review_session(session)
+        
+        return json.dumps({
+            "status": "success",
+            "review_pass": review_pass.to_dict(),
+            "item_status": item_review.get_status()
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def submit_consistency_review(
+    course_id: str,
+    course_path: str,
+    worktree_name: str,
+    item_id: str,
+    item_title: str,
+    item_type: str,
+    canvas_id: str,
+    file_path: str,
+    agent_id: str,
+    decision: str,
+    reasoning: str,
+    references: str = "",
+    severity: str = "medium"
+) -> str:
+    """
+    Submit a consistency review pass for an item (integration, alignment, structure).
+    
+    Args:
+        course_id: Canvas course ID
+        course_path: Path to course directory
+        worktree_name: Name of the worktree being reviewed
+        item_id: Unified item ID (e.g., 'page:12345')
+        item_title: Human-readable item title
+        item_type: Type of item (page, quiz, assignment, rubric)
+        canvas_id: Canvas object ID
+        file_path: Local file path
+        agent_id: ID of reviewing agent
+        decision: approved, rejected, needs_revision
+        reasoning: Explanation of consistency issues found
+        references: Comma-separated list of related item IDs for context
+        severity: low, medium, high
+    
+    Returns:
+        JSON with review result
+    """
+    try:
+        wm = WorkflowManager(course_path)
+        
+        # Create or load session
+        session = None
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                break
+            except:
+                pass
+        
+        if not session:
+            session = WorktreeReviewSession(worktree_name, course_id)
+        
+        # Add or update item review
+        item_review = session.get_item_review(item_id)
+        if not item_review:
+            item_review = ItemReview(item_id, item_title, item_type, canvas_id, file_path)
+        
+        ref_list = [r.strip() for r in references.split(",")] if references else []
+        
+        review_pass = ReviewPass(
+            pass_type="consistency",
+            agent_id=agent_id,
+            agent_role="consistency_agent",
+            decision=decision,
+            reasoning=reasoning,
+            references=ref_list,
+            severity=severity
+        )
+        item_review.add_pass(review_pass)
+        session.add_item_review(item_review)
+        
+        # Save session
+        wm.save_review_session(session)
+        
+        return json.dumps({
+            "status": "success",
+            "review_pass": review_pass.to_dict(),
+            "item_status": item_review.get_status()
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_item_review_history(
+    course_path: str,
+    item_id: str,
+    include_archived: bool = True
+) -> str:
+    """
+    Get all review history for a specific item across all worktrees.
+    
+    Args:
+        course_path: Path to course directory
+        item_id: Unified item ID (e.g., 'page:12345')
+        include_archived: Include archived reviews (default: true)
+    
+    Returns:
+        JSON array of all reviews for this item
+    """
+    try:
+        wm = WorkflowManager(course_path)
+        history = wm.get_item_review_history(item_id, include_archived)
+        return json.dumps(history, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_worktree_review_status(
+    course_path: str,
+    worktree_name: str
+) -> str:
+    """
+    Get review status summary for a worktree.
+    
+    Args:
+        course_path: Path to course directory
+        worktree_name: Name of the worktree
+    
+    Returns:
+        JSON with approved/rejected/escalation counts and items list
+    """
+    try:
+        wm = WorkflowManager(course_path)
+        
+        # Find and load session
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                return json.dumps({
+                    "worktree_name": worktree_name,
+                    "summary": session.get_summary(),
+                    "items": [item.to_dict() for item in session.items.values()]
+                }, indent=2)
+            except:
+                pass
+        
+        return json.dumps({"error": f"No reviews found for worktree: {worktree_name}"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_review_conflicts(
+    course_path: str,
+    worktree_name: str = ""
+) -> str:
+    """
+    Get all items with conflicts/escalations that need human review.
+    
+    Args:
+        course_path: Path to course directory
+        worktree_name: Optional filter to specific worktree
+    
+    Returns:
+        JSON array of conflicted items with reviewer reasoning
+    """
+    try:
+        wm = WorkflowManager(course_path)
+        conflicts = wm.get_worktree_review_conflicts(
+            worktree_name if worktree_name else None
+        )
+        return json.dumps({
+            "total_conflicts": len(conflicts),
+            "conflicts": conflicts
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def escalate_review_conflict(
+    course_path: str,
+    worktree_name: str,
+    item_id: str,
+    escalation_reason: str,
+    conflicting_reviews: str
+) -> str:
+    """
+    Escalate a review conflict to human review.
+    
+    Args:
+        course_path: Path to course directory
+        worktree_name: Name of the worktree
+        item_id: Item ID with conflict
+        escalation_reason: Reason for escalation
+        conflicting_reviews: JSON string of conflicting review passes
+    
+    Returns:
+        JSON with escalation record
+    """
+    try:
+        import json as json_lib
+        wm = WorkflowManager(course_path)
+        
+        # Find and load session
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                item_review = session.get_item_review(item_id)
+                
+                if item_review:
+                    item_review.escalation = {
+                        "status": "pending_human_review",
+                        "reason": escalation_reason,
+                        "escalated_at": datetime.utcnow().isoformat() + "Z",
+                        "conflicting_reviews": json_lib.loads(conflicting_reviews) if conflicting_reviews else []
+                    }
+                    
+                    session.add_item_review(item_review)
+                    wm.save_review_session(session)
+                    
+                    return json.dumps({
+                        "status": "escalated",
+                        "item_id": item_id,
+                        "escalation": item_review.escalation
+                    }, indent=2)
+            except Exception as e:
+                logger.error(f"Error processing review file: {e}")
+        
+        return json.dumps({"error": f"Could not find reviews for worktree: {worktree_name}"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def approve_and_merge_worktree(
+    course_path: str,
+    worktree_name: str,
+    approved_by_agent_id: str,
+    review_summary: str = ""
+) -> str:
+    """
+    Approve and merge a worktree back to main branch, then clean up.
+    
+    Args:
+        course_path: Path to course directory
+        worktree_name: Name of worktree to merge
+        approved_by_agent_id: ID of approving entity (agent or human)
+        review_summary: Optional summary of reviews/approvals
+    
+    Returns:
+        JSON with merge result, commit hash, Canvas sync status
+    """
+    try:
+        import subprocess
+        from pathlib import Path
+        from datetime import datetime
+        
+        wm = WorkflowManager(course_path)
+        
+        # Find worktree path
+        worktree_path = None
+        for item in Path(course_path).iterdir():
+            if item.is_dir() and item.name == worktree_name:
+                worktree_path = item
+                break
+        
+        if not worktree_path:
+            return json.dumps({"error": f"Worktree not found: {worktree_name}"})
+        
+        # Get worktree branch name
+        try:
+            branch_result = subprocess.run(
+                ["git", "symbolic-ref", "--short", "HEAD"],
+                cwd=str(worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            branch_name = branch_result.stdout.strip()
+        except:
+            return json.dumps({"error": "Could not determine worktree branch"})
+        
+        # Perform merge
+        try:
+            merge_msg = f"Merge {worktree_name}"
+            if review_summary:
+                merge_msg += f"\n\n{review_summary}"
+            
+            merge_result = subprocess.run(
+                ["git", "merge", branch_name, "-m", merge_msg],
+                cwd=course_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if merge_result.returncode != 0:
+                return json.dumps({
+                    "status": "merge_conflict",
+                    "error": merge_result.stderr
+                })
+        except Exception as e:
+            return json.dumps({"error": f"Merge failed: {str(e)}"})
+        
+        # Get merge commit hash
+        try:
+            commit_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=course_path,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            merge_commit = commit_result.stdout.strip()
+        except:
+            merge_commit = None
+        
+        # Delete worktree
+        try:
+            subprocess.run(
+                ["git", "worktree", "remove", str(worktree_path), "--force"],
+                cwd=course_path,
+                capture_output=True,
+                timeout=10
+            )
+        except Exception as e:
+            logger.error(f"Failed to remove worktree: {e}")
+        
+        # Archive reviews
+        try:
+            for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+                session = wm.load_review_session(review_file.name)
+                session.archive(approved_by_agent_id, merge_commit or "unknown")
+                wm.save_review_session(session)
+        except Exception as e:
+            logger.error(f"Failed to archive reviews: {e}")
+        
+        return json.dumps({
+            "status": "success",
+            "merge_commit": merge_commit,
+            "deleted_worktree": True,
+            "reviews_archived": True,
+            "next_step": "Check Canvas sync status and push to Canvas if needed"
+        }, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
