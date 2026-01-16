@@ -181,6 +181,37 @@ def get_assignment(
     else:
         result["is_discussion"] = False
 
+    # Include assignment overrides for differentiated assignments
+    try:
+        overrides_list = []
+        overrides = assignment.get_overrides()
+        for override in overrides:
+            override_data = {
+                'id': str(override.id),
+            }
+            # Student IDs or section ID
+            if hasattr(override, 'student_ids') and override.student_ids:
+                override_data['student_ids'] = override.student_ids
+            if hasattr(override, 'course_section_id') and override.course_section_id:
+                override_data['course_section_id'] = override.course_section_id
+            # Title (optional)
+            if hasattr(override, 'title') and override.title:
+                override_data['title'] = override.title
+            # Dates
+            if hasattr(override, 'due_at') and override.due_at:
+                override_data['due_at'] = str(override.due_at)
+            if hasattr(override, 'unlock_at') and override.unlock_at:
+                override_data['unlock_at'] = str(override.unlock_at)
+            if hasattr(override, 'lock_at') and override.lock_at:
+                override_data['lock_at'] = str(override.lock_at)
+
+            overrides_list.append(override_data)
+
+        if overrides_list:
+            result['overrides'] = overrides_list
+    except Exception as e:
+        logger.debug(f"Could not fetch overrides for assignment {assignment_id}: {e}")
+
     logger.info(f"Retrieved assignment {assignment_id} from course {course_id}")
     return result
 

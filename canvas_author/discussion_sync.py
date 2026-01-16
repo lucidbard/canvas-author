@@ -82,6 +82,8 @@ def create_discussion_frontmatter(
             for checkpoint in assignment['checkpoints']:
                 lines.append(f"  - tag: {checkpoint['tag']}")
                 lines.append(f"    points_possible: {checkpoint['points_possible']}")
+                if checkpoint.get('only_visible_to_overrides'):
+                    lines.append(f"    only_visible_to_overrides: {str(checkpoint['only_visible_to_overrides']).lower()}")
                 if checkpoint.get('due_at'):
                     due_at = convert_from_iso8601(checkpoint['due_at'])
                     if due_at:
@@ -94,6 +96,36 @@ def create_discussion_frontmatter(
                     lock_at = convert_from_iso8601(checkpoint['lock_at'])
                     if lock_at:
                         lines.append(f"    lock_at: \"{lock_at}\"")
+
+                # Checkpoint overrides for differentiated deadlines
+                overrides = checkpoint.get('overrides', [])
+                if overrides:
+                    lines.append("    overrides:")
+                    for override in overrides:
+                        lines.append(f"      - id: {override.get('id', '')}")
+
+                        # Student IDs
+                        if override.get('student_ids'):
+                            student_ids_str = ", ".join(str(sid) for sid in override['student_ids'])
+                            lines.append(f"        student_ids: [{student_ids_str}]")
+
+                        # Title (optional)
+                        if override.get('title'):
+                            lines.append(f"        title: \"{override['title']}\"")
+
+                        # Dates
+                        if override.get('due_at'):
+                            override_due_at = convert_from_iso8601(override['due_at'])
+                            if override_due_at:
+                                lines.append(f"        due_at: \"{override_due_at}\"")
+                        if override.get('unlock_at'):
+                            override_unlock_at = convert_from_iso8601(override['unlock_at'])
+                            if override_unlock_at:
+                                lines.append(f"        unlock_at: \"{override_unlock_at}\"")
+                        if override.get('lock_at'):
+                            override_lock_at = convert_from_iso8601(override['lock_at'])
+                            if override_lock_at:
+                                lines.append(f"        lock_at: \"{override_lock_at}\"")
 
         # Due dates (for non-checkpointed discussions)
         elif assignment.get('due_at'):
@@ -165,21 +197,87 @@ def parse_discussion_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
                 current_dict[key] = value
             continue
 
+        # Check for nested list (overrides within checkpoints)
+        if line.startswith("      - ") and current_dict is not None and 'overrides' in current_dict:
+            # New override item within a checkpoint
+            override_list = current_dict.get('overrides', [])
+            if not isinstance(override_list, list):
+                override_list = []
+                current_dict['overrides'] = override_list
+
+            # Start new override dict
+            override_dict = {}
+            # Parse the field after -
+            if ":" in line[8:]:
+                key, _, value = line[8:].partition(":")
+                key = key.strip()
+                value = value.strip()
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value and value.replace('.', '').replace('-', '').isdigit():
+                    value = float(value) if '.' in value else int(value)
+                override_dict[key] = value
+            override_list.append(override_dict)
+            continue
+
+        # Check for override field (within checkpoint overrides)
+        if line.startswith("        ") and current_dict is not None and 'overrides' in current_dict:
+            if ":" in line:
+                override_list = current_dict.get('overrides', [])
+                if override_list and isinstance(override_list, list):
+                    last_override = override_list[-1]
+
+                    key, _, value = line[8:].partition(":")
+                    key = key.strip()
+                    value = value.strip()
+
+                    # Handle arrays like student_ids: [1, 2, 3]
+                    if value.startswith('[') and value.endswith(']'):
+                        array_content = value[1:-1].strip()
+                        if array_content:
+                            items = [item.strip() for item in array_content.split(',')]
+                            try:
+                                value = [int(item) for item in items]
+                            except:
+                                value = items
+                        else:
+                            value = []
+                    elif value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+                    elif value.lower() == "true":
+                        value = True
+                    elif value.lower() == "false":
+                        value = False
+                    elif value.lower() == "null":
+                        value = None
+                    elif value and value.replace('.', '').replace('-', '').isdigit():
+                        value = float(value) if '.' in value else int(value)
+
+                    last_override[key] = value
+            continue
+
         # Check for sub-dict field (checkpoint fields)
         if line.startswith("    ") and current_dict is not None:
             if ":" in line:
                 key, _, value = line[4:].partition(":")
                 key = key.strip()
                 value = value.strip()
-                if value.startswith('"') and value.endswith('"'):
+
+                # Empty value means upcoming list (like overrides:)
+                if value == "":
+                    current_dict[key] = []
+                elif value.startswith('"') and value.endswith('"'):
                     value = value[1:-1]
+                    current_dict[key] = value
                 elif value.lower() == "true":
-                    value = True
+                    current_dict[key] = True
                 elif value.lower() == "false":
-                    value = False
+                    current_dict[key] = False
                 elif value and value.replace('.', '').replace('-', '').isdigit():
                     value = float(value) if '.' in value else int(value)
-                current_dict[key] = value
+                    current_dict[key] = value
+                else:
+                    current_dict[key] = value
             continue
 
         # Check for key: value

@@ -72,6 +72,42 @@ def create_assignment_frontmatter(
     lines.append(f"grading_type: {assignment.get('grading_type', 'points')}")
     lines.append(f"published: {str(assignment.get('published', False)).lower()}")
 
+    # Assignment overrides for differentiated assignments
+    if assignment.get('only_visible_to_overrides'):
+        lines.append(f"only_visible_to_overrides: {str(assignment['only_visible_to_overrides']).lower()}")
+
+    # Add assignment overrides if present
+    overrides = assignment.get('overrides', [])
+    if overrides:
+        lines.append("assignment_overrides:")
+        for override in overrides:
+            lines.append(f"  - id: {override.get('id', '')}")
+
+            # Student IDs or section ID
+            if override.get('student_ids'):
+                student_ids_str = ", ".join(str(sid) for sid in override['student_ids'])
+                lines.append(f"    student_ids: [{student_ids_str}]")
+            elif override.get('course_section_id'):
+                lines.append(f"    course_section_id: {override['course_section_id']}")
+
+            # Title (optional, for documentation)
+            if override.get('title'):
+                lines.append(f"    title: \"{override['title']}\"")
+
+            # Dates
+            if override.get('due_at'):
+                due_at = convert_from_iso8601(override['due_at'])
+                if due_at:
+                    lines.append(f"    due_at: \"{due_at}\"")
+            if override.get('unlock_at'):
+                unlock_at = convert_from_iso8601(override['unlock_at'])
+                if unlock_at:
+                    lines.append(f"    unlock_at: \"{unlock_at}\"")
+            if override.get('lock_at'):
+                lock_at = convert_from_iso8601(override['lock_at'])
+                if lock_at:
+                    lines.append(f"    lock_at: \"{lock_at}\"")
+
     lines.append("---")
     lines.append("")
     return "\n".join(lines)
@@ -97,14 +133,71 @@ def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     metadata = {}
     current_key = None
     current_list = None
+    current_dict = None
 
     for line in frontmatter.split("\n"):
-        line = line.rstrip()
-        if not line:
+        line_stripped = line.rstrip()
+        if not line_stripped:
             continue
 
-        # Check for list item
-        if line.startswith("  - ") and current_key:
+        # Check for nested list item (assignment_overrides)
+        if line.startswith("  - ") and current_key == "assignment_overrides":
+            # New override item
+            if current_dict:
+                current_list.append(current_dict)
+            current_dict = {}
+            # Parse the field after -
+            if ":" in line[4:]:
+                key, _, value = line[4:].partition(":")
+                key = key.strip()
+                value = value.strip()
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value.lower() == "true":
+                    value = True
+                elif value.lower() == "false":
+                    value = False
+                elif value and value.replace('.', '').replace('-', '').isdigit():
+                    value = float(value) if '.' in value else int(value)
+                current_dict[key] = value
+            continue
+
+        # Check for nested dict field (override properties)
+        if line.startswith("    ") and current_dict is not None:
+            if ":" in line:
+                key, _, value = line[4:].partition(":")
+                key = key.strip()
+                value = value.strip()
+
+                # Handle arrays like student_ids: [1, 2, 3]
+                if value.startswith('[') and value.endswith(']'):
+                    # Parse array
+                    array_content = value[1:-1].strip()
+                    if array_content:
+                        items = [item.strip() for item in array_content.split(',')]
+                        # Try to convert to int
+                        try:
+                            value = [int(item) for item in items]
+                        except:
+                            value = items
+                    else:
+                        value = []
+                elif value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value.lower() == "true":
+                    value = True
+                elif value.lower() == "false":
+                    value = False
+                elif value.lower() == "null":
+                    value = None
+                elif value and value.replace('.', '').replace('-', '').isdigit():
+                    value = float(value) if '.' in value else int(value)
+
+                current_dict[key] = value
+            continue
+
+        # Check for simple list item (submission_types, allowed_extensions)
+        if line.startswith("  - ") and current_key and current_key != "assignment_overrides":
             if current_list is None:
                 current_list = []
             current_list.append(line[4:])
@@ -113,8 +206,10 @@ def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 
         # Check for key: value
         if ":" in line:
-            if current_list is not None:
-                current_list = None
+            # Finish any current dict
+            if current_dict and current_list is not None and current_key == "assignment_overrides":
+                current_list.append(current_dict)
+                current_dict = None
 
             key, _, value = line.partition(":")
             key = key.strip()
@@ -145,8 +240,83 @@ def parse_assignment_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
             else:
                 metadata[key] = value
                 current_key = key
+                current_list = None
+
+    # Finish any remaining dict
+    if current_dict and current_list is not None and current_key == "assignment_overrides":
+        current_list.append(current_dict)
 
     return metadata, body
+
+
+def _sync_assignment_overrides(
+    course_id: str,
+    assignment_id: str,
+    overrides: List[Dict[str, Any]],
+    client: CanvasClient
+) -> None:
+    """
+    Sync assignment overrides to Canvas.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Assignment ID
+        overrides: List of override dicts with student_ids or course_section_id and dates
+        client: CanvasClient instance
+    """
+    course = client.get_course(course_id)
+    assignment = course.get_assignment(assignment_id)
+
+    # Get existing overrides
+    existing_overrides = {}
+    try:
+        for existing in assignment.get_overrides():
+            existing_overrides[str(existing.id)] = existing
+    except:
+        pass
+
+    # Create or update overrides
+    for override_data in overrides:
+        override_id = override_data.get('id')
+
+        # Build override parameters
+        override_params = {}
+
+        # Student IDs or section ID (required)
+        if 'student_ids' in override_data:
+            override_params['student_ids'] = override_data['student_ids']
+        elif 'course_section_id' in override_data:
+            override_params['course_section_id'] = override_data['course_section_id']
+        else:
+            logger.warning(f"Override missing student_ids or course_section_id, skipping")
+            continue
+
+        # Title (optional)
+        if 'title' in override_data:
+            override_params['title'] = override_data['title']
+
+        # Dates
+        if 'due_at' in override_data:
+            override_params['due_at'] = convert_to_iso8601(override_data['due_at'], use_utc=True)
+        if 'unlock_at' in override_data:
+            override_params['unlock_at'] = convert_to_iso8601(override_data['unlock_at'], use_utc=True)
+        if 'lock_at' in override_data:
+            override_params['lock_at'] = convert_to_iso8601(override_data['lock_at'], use_utc=True)
+
+        if override_id and override_id in existing_overrides:
+            # Update existing override
+            logger.info(f"Updating override {override_id} for assignment {assignment_id}")
+            try:
+                existing_overrides[override_id].edit(**override_params)
+            except Exception as e:
+                logger.error(f"Error updating override {override_id}: {e}")
+        else:
+            # Create new override
+            logger.info(f"Creating new override for assignment {assignment_id}: {override_params}")
+            try:
+                assignment.create_override(**override_params)
+            except Exception as e:
+                logger.error(f"Error creating override: {e}")
 
 
 def _create_assignment_from_markdown(
@@ -205,6 +375,16 @@ def _create_assignment_from_markdown(
     if has_dates:
         logger.info(f"Updating assignment {assignment.id} with dates: {date_params}")
         assignment = assignment.edit(assignment=date_params)
+
+    # Set only_visible_to_overrides if specified
+    if metadata.get('only_visible_to_overrides'):
+        logger.info(f"Setting only_visible_to_overrides=true for assignment {assignment.id}")
+        assignment.edit(assignment={'only_visible_to_overrides': True})
+
+    # Sync assignment overrides if present
+    if metadata.get('assignment_overrides'):
+        logger.info(f"Syncing {len(metadata['assignment_overrides'])} overrides for assignment {assignment.id}")
+        _sync_assignment_overrides(course_id, str(assignment.id), metadata['assignment_overrides'], client)
 
     return {
         "id": str(assignment.id),
@@ -377,6 +557,16 @@ def push_assignments(
                 assignment = course.get_assignment(assignment_id)
                 logger.debug(f"Update params for assignment {assignment_id}: {update_params}")
                 assignment.edit(assignment=update_params)
+
+                # Update only_visible_to_overrides if specified
+                if "only_visible_to_overrides" in metadata:
+                    logger.info(f"Setting only_visible_to_overrides={metadata['only_visible_to_overrides']} for assignment {assignment_id}")
+                    assignment.edit(assignment={'only_visible_to_overrides': metadata['only_visible_to_overrides']})
+
+                # Sync assignment overrides if present
+                if metadata.get('assignment_overrides'):
+                    logger.info(f"Syncing {len(metadata['assignment_overrides'])} overrides for assignment {assignment_id}")
+                    _sync_assignment_overrides(course_id, assignment_id, metadata['assignment_overrides'], canvas)
 
                 results["updated"].append({
                     "id": assignment_id,
