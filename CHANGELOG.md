@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Assignment Override Support** - Differentiated deadlines and visibility
+  - `only_visible_to_overrides` flag for assignments
+  - `assignment_overrides` array with student_ids or course_section_id
+  - Extended deadlines for accommodations
+  - Section-specific due dates
+  - Assignments visible only to specific students
+- **Checkpoint Override Support** - Differentiated deadlines for checkpointed discussions
+  - Override arrays per checkpoint
+  - `only_visible_to_overrides` per checkpoint
+  - Version-controlled differentiated grading
+
 ## [0.1.2] - 2026-01-12
 
 ### Added
