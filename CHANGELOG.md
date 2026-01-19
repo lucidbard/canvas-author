@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Override arrays per checkpoint
   - `only_visible_to_overrides` per checkpoint
   - Version-controlled differentiated grading
+- **Hierarchical Submissions View** - Improved UI workflow
+  - `get_all_submissions_hierarchical()` function in submission_sync module
+  - Pre-fetches all assignments with their submissions in a single call
+  - Eliminates need for per-assignment navigation in UIs
+  - Returns assignment metadata, submission counts, and full submission list
+  - Available as MCP server tool for VS Code extension integration
 
 ## [0.1.2] - 2026-01-12
 

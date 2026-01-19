@@ -51,6 +51,11 @@ from .announcement_sync import (
     pull_announcements,
     push_announcements,
 )
+from .submission_sync import (
+    pull_submissions,
+    submission_status,
+    get_all_submissions_hierarchical,
+)
 from .workflow import (
     WorkflowManager,
     WorktreeReviewSession,
@@ -109,6 +114,10 @@ __all__ = [
     # Announcement Sync
     "pull_announcements",
     "push_announcements",
+    # Submission Sync
+    "pull_submissions",
+    "submission_status",
+    "get_all_submissions_hierarchical",
     # Workflow
     "WorkflowManager",
     "WorktreeReviewSession",

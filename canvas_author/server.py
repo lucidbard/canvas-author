@@ -1138,6 +1138,48 @@ def submission_status(
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+def get_all_submissions_hierarchical(
+    course_id: str,
+    include_user: bool = True,
+    include_rubric: bool = False
+) -> str:
+    """
+    Get all submissions organized hierarchically by assignment.
+
+    Returns all assignments with their submissions pre-loaded in a single call,
+    eliminating the need to click into each assignment individually.
+
+    Perfect for UI views that show:
+    - Assignment 1
+      - Student A submission
+      - Student B submission
+    - Assignment 2
+      - Student A submission
+      - Student B submission
+
+    Args:
+        course_id: Canvas course ID
+        include_user: Include user/student info in submissions (default: true)
+        include_rubric: Include rubric assessment data (default: false)
+
+    Returns:
+        JSON array of assignments, each containing:
+        - id, name, due_at, points_possible (assignment metadata)
+        - submissions: Array of submission objects with student info
+        - submission_counts: Summary counts (submitted, graded, needs_grading, etc.)
+    """
+    try:
+        result = submission_sync.get_all_submissions_hierarchical(
+            course_id,
+            include_user=include_user,
+            include_rubric=include_rubric
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # =============================================================================
 # Quiz Tools
 # =============================================================================

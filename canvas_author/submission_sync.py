@@ -369,3 +369,136 @@ def list_assignments_with_submissions(
         result.append(assignment)
 
     return result
+
+
+def get_all_submissions_hierarchical(
+    course_id: str,
+    include_user: bool = True,
+    include_rubric: bool = False,
+    client: Optional[CanvasClient] = None
+) -> List[Dict[str, Any]]:
+    """
+    Get all submissions organized hierarchically by assignment.
+
+    Perfect for UI views that want to show:
+    - Assignment 1
+      - Student A submission
+      - Student B submission
+    - Assignment 2
+      - Student A submission
+      - Student B submission
+
+    Args:
+        course_id: Canvas course ID
+        include_user: Include user/student info in submissions
+        include_rubric: Include rubric assessment data
+        client: Optional CanvasClient instance
+
+    Returns:
+        List of assignment dicts, each containing:
+        - id, name, due_at, points_possible (assignment metadata)
+        - submissions: List of submission dicts with student info
+        - submission_counts: Summary counts (submitted, graded, etc)
+
+    Example:
+        [
+          {
+            "id": "9397844",
+            "name": "Week 1 Exercise",
+            "due_at": "2026-01-17T04:59:59Z",
+            "points_possible": 30,
+            "submission_counts": {
+              "total": 25,
+              "submitted": 20,
+              "graded": 15,
+              "needs_grading": 5
+            },
+            "submissions": [
+              {
+                "id": "123",
+                "user_id": "456",
+                "user_name": "John Doe",
+                "submitted_at": "2026-01-16T23:30:00Z",
+                "score": 28,
+                "grade": "28",
+                "workflow_state": "graded",
+                "late": false
+              },
+              ...
+            ]
+          },
+          ...
+        ]
+    """
+    canvas = client or get_canvas_client()
+
+    # Get all assignments
+    assignments = list_assignments(course_id, client=canvas)
+
+    result = []
+    for assignment in assignments:
+        assignment_id = assignment['id']
+        assignment_name = assignment.get('name', 'Untitled')
+
+        logger.info(f"Fetching submissions for assignment: {assignment_name} ({assignment_id})")
+
+        try:
+            # Get all submissions for this assignment
+            submissions = list_submissions(
+                course_id,
+                assignment_id,
+                include_user=include_user,
+                include_rubric=include_rubric,
+                client=canvas
+            )
+
+            # Calculate counts
+            total = len(submissions)
+            submitted = sum(1 for s in submissions if s.get('submitted_at'))
+            graded = sum(1 for s in submissions if s.get('workflow_state') == 'graded')
+            pending = sum(1 for s in submissions if s.get('workflow_state') == 'pending_review')
+            late = sum(1 for s in submissions if s.get('late'))
+            missing = sum(1 for s in submissions if s.get('missing'))
+
+            # Build hierarchical structure
+            assignment_with_subs = {
+                'id': assignment_id,
+                'name': assignment_name,
+                'due_at': assignment.get('due_at'),
+                'unlock_at': assignment.get('unlock_at'),
+                'lock_at': assignment.get('lock_at'),
+                'points_possible': assignment.get('points_possible', 0),
+                'grading_type': assignment.get('grading_type', 'points'),
+                'published': assignment.get('published', False),
+                'html_url': assignment.get('html_url', ''),
+                'submission_counts': {
+                    'total': total,
+                    'submitted': submitted,
+                    'not_submitted': total - submitted,
+                    'graded': graded,
+                    'pending_review': pending,
+                    'needs_grading': submitted - graded,
+                    'late': late,
+                    'missing': missing,
+                },
+                'submissions': submissions,
+            }
+
+            result.append(assignment_with_subs)
+
+        except Exception as e:
+            logger.error(f"Error fetching submissions for assignment {assignment_id}: {e}")
+            # Include assignment even if submissions fail
+            result.append({
+                'id': assignment_id,
+                'name': assignment_name,
+                'due_at': assignment.get('due_at'),
+                'points_possible': assignment.get('points_possible', 0),
+                'published': assignment.get('published', False),
+                'error': str(e),
+                'submissions': [],
+                'submission_counts': None,
+            })
+
+    logger.info(f"Retrieved submissions for {len(result)} assignments")
+    return result
