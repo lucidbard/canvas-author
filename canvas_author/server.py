@@ -7,8 +7,8 @@ discussions, and rubrics with markdown support via pandoc.
 
 import json
 import logging
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime, timedelta
 
 from mcp.server import FastMCP
 
@@ -31,6 +31,11 @@ mcp = FastMCP(
 assignments, discussions, and rubrics. Uses pandoc for markdown ↔ HTML conversion.
 Supports two-way sync between Canvas and local markdown files.""",
 )
+
+# Simple in-memory cache for submissions with TTL
+# Format: {cache_key: (data, timestamp)}
+_submissions_cache: Dict[str, Tuple[Any, datetime]] = {}
+_CACHE_TTL_SECONDS = 30  # Cache for 30 seconds to avoid redundant API calls
 
 
 # =============================================================================
@@ -1142,13 +1147,17 @@ def submission_status(
 def get_all_submissions_hierarchical(
     course_id: str,
     include_user: bool = True,
-    include_rubric: bool = False
+    include_rubric: bool = False,
+    force_refresh: bool = False
 ) -> str:
     """
     Get all submissions organized hierarchically by assignment.
 
     Returns all assignments with their submissions pre-loaded in a single call,
     eliminating the need to click into each assignment individually.
+
+    Uses a 30-second cache to avoid redundant API calls. Set force_refresh=True
+    to bypass cache and fetch fresh data.
 
     Perfect for UI views that show:
     - Assignment 1
@@ -1162,6 +1171,7 @@ def get_all_submissions_hierarchical(
         course_id: Canvas course ID
         include_user: Include user/student info in submissions (default: true)
         include_rubric: Include rubric assessment data (default: false)
+        force_refresh: Force refresh from API, bypassing cache (default: false)
 
     Returns:
         JSON array of assignments, each containing:
@@ -1169,12 +1179,30 @@ def get_all_submissions_hierarchical(
         - submissions: Array of submission objects with student info
         - submission_counts: Summary counts (submitted, graded, needs_grading, etc.)
     """
+    cache_key = f"submissions_hierarchical:{course_id}:{include_user}:{include_rubric}"
+
+    # Check cache unless force refresh
+    if not force_refresh and cache_key in _submissions_cache:
+        cached_data, cached_time = _submissions_cache[cache_key]
+        age_seconds = (datetime.now() - cached_time).total_seconds()
+
+        if age_seconds < _CACHE_TTL_SECONDS:
+            logger.info(f"Returning cached submissions (age: {age_seconds:.1f}s)")
+            return json.dumps(cached_data, indent=2)
+        else:
+            logger.info(f"Cache expired (age: {age_seconds:.1f}s), fetching fresh data")
+
     try:
         result = submission_sync.get_all_submissions_hierarchical(
             course_id,
             include_user=include_user,
             include_rubric=include_rubric
         )
+
+        # Cache the result
+        _submissions_cache[cache_key] = (result, datetime.now())
+        logger.info(f"Cached fresh submissions data for course {course_id}")
+
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
