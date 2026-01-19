@@ -293,7 +293,9 @@ def submission_status(
     # Count by status
     total = len(submissions)
     submitted = sum(1 for s in submissions if s.get('submitted_at'))
-    graded = sum(1 for s in submissions if s.get('workflow_state') == 'graded')
+    # A submission is graded if it has a score or grade, OR if workflow_state is 'graded'
+    # This handles auto-graded quizzes where workflow_state may not be 'graded'
+    graded = sum(1 for s in submissions if (s.get('score') is not None or s.get('grade') is not None or s.get('workflow_state') == 'graded'))
     pending = sum(1 for s in submissions if s.get('workflow_state') == 'pending_review')
     late = sum(1 for s in submissions if s.get('late'))
     missing = sum(1 for s in submissions if s.get('missing'))
@@ -455,7 +457,9 @@ def get_all_submissions_hierarchical(
             # Calculate counts
             total = len(submissions)
             submitted = sum(1 for s in submissions if s.get('submitted_at'))
-            graded = sum(1 for s in submissions if s.get('workflow_state') == 'graded')
+            # A submission is graded if it has a score or grade, OR if workflow_state is 'graded'
+            # This handles auto-graded quizzes where workflow_state may not be 'graded'
+            graded = sum(1 for s in submissions if (s.get('score') is not None or s.get('grade') is not None or s.get('workflow_state') == 'graded'))
             pending = sum(1 for s in submissions if s.get('workflow_state') == 'pending_review')
             late = sum(1 for s in submissions if s.get('late'))
             missing = sum(1 for s in submissions if s.get('missing'))
