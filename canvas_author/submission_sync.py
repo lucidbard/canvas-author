@@ -446,7 +446,7 @@ def get_all_submissions_hierarchical(
 
         try:
             # Get all submissions for this assignment
-            submissions = list_submissions(
+            all_submissions = list_submissions(
                 course_id,
                 assignment_id,
                 include_user=include_user,
@@ -454,9 +454,19 @@ def get_all_submissions_hierarchical(
                 client=canvas
             )
 
-            # Calculate counts
-            total = len(submissions)
-            submitted = sum(1 for s in submissions if s.get('submitted_at'))
+            # Filter to only include actual submissions (exclude unsubmitted placeholder records)
+            # A submission is "real" if it has been submitted or has a score/grade
+            submissions = [
+                s for s in all_submissions
+                if (s.get('submitted_at') and s.get('submitted_at') != 'None')
+                or s.get('score') is not None
+                or s.get('grade') is not None
+                or s.get('workflow_state') not in ['', 'unsubmitted', None]
+            ]
+
+            # Calculate counts (using all_submissions for total enrolled students)
+            total_enrolled = len(all_submissions)
+            submitted = sum(1 for s in submissions if s.get('submitted_at') and s.get('submitted_at') != 'None')
             # A submission is graded if it has a score or grade, OR if workflow_state is 'graded'
             # This handles auto-graded quizzes where workflow_state may not be 'graded'
             graded = sum(1 for s in submissions if (s.get('score') is not None or s.get('grade') is not None or s.get('workflow_state') == 'graded'))
@@ -476,16 +486,16 @@ def get_all_submissions_hierarchical(
                 'published': assignment.get('published', False),
                 'html_url': assignment.get('html_url', ''),
                 'submission_counts': {
-                    'total': total,
+                    'total': total_enrolled,
                     'submitted': submitted,
-                    'not_submitted': total - submitted,
+                    'not_submitted': total_enrolled - submitted,
                     'graded': graded,
                     'pending_review': pending,
                     'needs_grading': submitted - graded,
                     'late': late,
                     'missing': missing,
                 },
-                'submissions': submissions,
+                'submissions': submissions,  # Only actual submissions, not placeholder records
             }
 
             result.append(assignment_with_subs)
