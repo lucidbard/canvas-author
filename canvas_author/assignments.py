@@ -343,6 +343,17 @@ def get_submission(
         "late": getattr(submission, "late", False),
         "missing": getattr(submission, "missing", False),
         "attempt": getattr(submission, "attempt", None),
+        "submission_type": getattr(submission, "submission_type", None),
+        "body": getattr(submission, "body", None),
+        "url": getattr(submission, "url", None),
+        "preview_url": getattr(submission, "preview_url", None),
+    }
+
+    # Add assignment metadata for context
+    result["assignment"] = {
+        "id": str(assignment.id),
+        "name": assignment.name,
+        "points_possible": getattr(assignment, "points_possible", None),
     }
 
     if hasattr(submission, "user"):
@@ -353,11 +364,24 @@ def get_submission(
             "sortable_name": user.get("sortable_name", ""),
         }
 
+    # Add attachments if present
+    if hasattr(submission, "attachments") and submission.attachments:
+        result["attachments"] = [
+            {
+                "id": att.get("id"),
+                "filename": att.get("filename"),
+                "url": att.get("url"),
+                "content_type": att.get("content-type"),
+                "size": att.get("size"),
+            }
+            for att in submission.attachments
+        ]
+
     if include_rubric and hasattr(submission, "rubric_assessment"):
         result["rubric_assessment"] = submission.rubric_assessment
 
     if hasattr(submission, "submission_comments"):
-        result["comments"] = submission.submission_comments
+        result["submission_comments"] = submission.submission_comments
 
     logger.info(f"Retrieved submission for user {user_id} on assignment {assignment_id}")
     return result
