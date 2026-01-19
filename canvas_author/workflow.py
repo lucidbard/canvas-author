@@ -362,6 +362,7 @@ def create_agent_worktree(
 ) -> Dict[str, Any]:
     """
     Create a new git worktree for an agent with role-based restrictions.
+    Worktrees are stored in .canvas-author/worktrees/ (gitignored).
     
     Args:
         course_id: Canvas course ID
@@ -381,8 +382,12 @@ def create_agent_worktree(
     unique_id = str(uuid.uuid4())[:8]
     worktree_name = f"{agent_name}-{timestamp}-{unique_id}"
     
-    # Create worktree
-    worktree_path = Path(course_path) / worktree_name
+    # Create worktree in .canvas-author/worktrees/ subdirectory
+    canvas_author_dir = Path(course_path) / ".canvas-author"
+    worktrees_dir = canvas_author_dir / "worktrees"
+    worktrees_dir.mkdir(parents=True, exist_ok=True)
+    
+    worktree_path = worktrees_dir / worktree_name
     
     try:
         # Create worktree from main branch
