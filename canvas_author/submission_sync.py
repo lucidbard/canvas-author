@@ -455,13 +455,11 @@ def get_all_submissions_hierarchical(
             )
 
             # Filter to only include actual submissions (exclude unsubmitted placeholder records)
-            # A submission is "real" if it has been submitted or has a score/grade
+            # A submission is "real" ONLY if it has been submitted (has submitted_at timestamp)
+            # We don't rely on workflow_state as it can be misleading
             submissions = [
                 s for s in all_submissions
                 if (s.get('submitted_at') and s.get('submitted_at') != 'None')
-                or s.get('score') is not None
-                or s.get('grade') is not None
-                or s.get('workflow_state') not in ['', 'unsubmitted', None]
             ]
 
             # Calculate counts (using all_submissions for total enrolled students)
