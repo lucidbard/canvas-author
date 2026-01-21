@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module, discussion_sync, announcement_sync
+from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module, discussion_sync, announcement_sync, draft_storage
 from .pandoc import is_pandoc_available
 from .workflow import (
     WorkflowManager,
@@ -2072,6 +2072,207 @@ def approve_and_merge_worktree(
         return json.dumps({"error": str(e)})
 
 
+# =============================================================================
+# Draft Grade Storage Tools
+# =============================================================================
+
+@mcp.tool()
+def load_draft_grade(assignment_id: str, user_id: str) -> str:
+    """
+    Load a draft grade from local storage.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+
+    Returns:
+        JSON with draft grade data including runs, or null if not found
+    """
+    try:
+        result = draft_storage.load_draft_grade(assignment_id, user_id)
+        if result is None:
+            return json.dumps(None)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def save_draft_grade(assignment_id: str, user_id: str, draft_data: str) -> str:
+    """
+    Save a draft grade to local storage.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+        draft_data: JSON string with draft data (must have 'runs' and 'current_run')
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        data = json.loads(draft_data)
+        success = draft_storage.save_draft_grade(assignment_id, user_id, data)
+        return json.dumps({"success": success})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def add_draft_run(
+    assignment_id: str,
+    user_id: str,
+    run_data: str,
+    set_as_current: bool = True
+) -> str:
+    """
+    Add a new draft run to an existing draft grade.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+        run_data: JSON string with run data (rubric_assessment, comments, model, etc.)
+        set_as_current: Whether to set this as the current run (default: True)
+
+    Returns:
+        JSON with run_id if successful
+    """
+    try:
+        data = json.loads(run_data)
+        run_id = draft_storage.add_draft_run(assignment_id, user_id, data, set_as_current)
+        if run_id:
+            return json.dumps({"success": True, "run_id": run_id})
+        return json.dumps({"error": "Failed to add draft run"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_current_draft_run(assignment_id: str, user_id: str) -> str:
+    """
+    Get the current draft run for a student.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+
+    Returns:
+        JSON with current run data or null if not found
+    """
+    try:
+        result = draft_storage.get_current_run(assignment_id, user_id)
+        if result is None:
+            return json.dumps(None)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def set_current_draft_run(assignment_id: str, user_id: str, run_id: str) -> str:
+    """
+    Set a specific run as the current run.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+        run_id: Run ID to set as current
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        success = draft_storage.set_current_run(assignment_id, user_id, run_id)
+        return json.dumps({"success": success})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def list_draft_grades(assignment_id: str) -> str:
+    """
+    List all draft grades for an assignment.
+
+    Args:
+        assignment_id: Canvas assignment ID
+
+    Returns:
+        JSON list of drafts with user_id and summary info
+    """
+    try:
+        result = draft_storage.list_draft_grades(assignment_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def delete_draft_grade(assignment_id: str, user_id: str) -> str:
+    """
+    Delete a draft grade file.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        success = draft_storage.delete_draft_grade(assignment_id, user_id)
+        return json.dumps({"success": success})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def update_draft_run(
+    assignment_id: str,
+    user_id: str,
+    run_id: str,
+    updates: str
+) -> str:
+    """
+    Update an existing draft run.
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+        run_id: Run ID to update
+        updates: JSON string with fields to update
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        update_data = json.loads(updates)
+        success = draft_storage.update_run(assignment_id, user_id, run_id, update_data)
+        return json.dumps({"success": success})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def set_official_rubric(assignment_id: str, user_id: str, rubric_data: str) -> str:
+    """
+    Set the official rubric (formatted for Canvas API submission).
+
+    Args:
+        assignment_id: Canvas assignment ID
+        user_id: Canvas user ID
+        rubric_data: JSON string with rubric data formatted for Canvas API
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        data = json.loads(rubric_data)
+        success = draft_storage.set_official_rubric(assignment_id, user_id, data)
+        return json.dumps({"success": success})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def main():
     """Run the Canvas MCP server."""
     print("Starting Canvas MCP Server...")
@@ -2084,7 +2285,11 @@ def main():
     print("       list_courses, list_assignments, get_assignment,")
     print("       list_submissions, get_submission, update_grade,")
     print("       list_discussions, get_discussion_posts,")
-    print("       get_rubric, update_rubric")
+    print("       get_rubric, update_rubric,")
+    print("       load_draft_grade, save_draft_grade, add_draft_run,")
+    print("       get_current_draft_run, set_current_draft_run,")
+    print("       list_draft_grades, delete_draft_grade, update_draft_run,")
+    print("       set_official_rubric")
     print()
     print("NOTE: Submission tools anonymize student data by default for AI privacy.")
     print("      Use anonymize=False only when working locally without AI review.")

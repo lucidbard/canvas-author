@@ -281,11 +281,11 @@ def list_submissions(
         if hasattr(submission, "attachments") and submission.attachments:
             sub_data["attachments"] = [
                 {
-                    "id": str(att.get("id", "")),
-                    "filename": att.get("filename", ""),
-                    "display_name": att.get("display_name", ""),
-                    "content_type": att.get("content-type", ""),
-                    "url": att.get("url", ""),
+                    "id": str(getattr(att, "id", "")),
+                    "filename": getattr(att, "filename", ""),
+                    "display_name": getattr(att, "display_name", ""),
+                    "content_type": getattr(att, "content_type", ""),
+                    "url": getattr(att, "url", ""),
                 }
                 for att in submission.attachments
             ]
@@ -356,6 +356,13 @@ def get_submission(
         "points_possible": getattr(assignment, "points_possible", None),
     }
 
+    # Include discussion topic info if this is a discussion assignment
+    if hasattr(assignment, 'discussion_topic') and assignment.discussion_topic:
+        result["assignment"]["is_discussion"] = True
+        result["assignment"]["discussion_topic_id"] = str(assignment.discussion_topic.get('id'))
+    else:
+        result["assignment"]["is_discussion"] = False
+
     if hasattr(submission, "user"):
         user = submission.user
         result["user"] = {
@@ -368,11 +375,11 @@ def get_submission(
     if hasattr(submission, "attachments") and submission.attachments:
         result["attachments"] = [
             {
-                "id": att.get("id"),
-                "filename": att.get("filename"),
-                "url": att.get("url"),
-                "content_type": att.get("content-type"),
-                "size": att.get("size"),
+                "id": getattr(att, "id", None),
+                "filename": getattr(att, "filename", ""),
+                "url": getattr(att, "url", ""),
+                "content_type": getattr(att, "content_type", ""),
+                "size": getattr(att, "size", 0),
             }
             for att in submission.attachments
         ]
