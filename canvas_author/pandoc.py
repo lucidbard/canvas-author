@@ -55,7 +55,8 @@ def markdown_to_html(
     if not _check_pandoc():
         raise RuntimeError("pandoc is not installed. Install it with: apt install pandoc (Linux) or brew install pandoc (macOS)")
 
-    cmd = ["pandoc", "-f", "markdown", "-t", "html"]
+    # Use markdown+raw_html to preserve HTML blocks (like video embeds)
+    cmd = ["pandoc", "-f", "markdown+raw_html", "-t", "html"]
     if standalone:
         cmd.append("-s")
 
