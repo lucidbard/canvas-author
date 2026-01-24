@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient
 from .discussions import list_discussions, create_discussion, update_discussion
 from .pandoc import html_to_markdown, markdown_to_html, is_pandoc_available
 from .datetime_utils import convert_to_iso8601, convert_from_iso8601

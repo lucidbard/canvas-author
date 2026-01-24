@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from urllib.parse import urlparse, unquote
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient
 
 logger = logging.getLogger("canvas_author.files")
 

@@ -10,11 +10,11 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient
 from .pages import list_pages, get_page, create_page, update_page
-from .frontmatter import parse_frontmatter, create_page_frontmatter, update_frontmatter
+from canvas_common import parse_frontmatter, create_page_frontmatter, update_frontmatter
 from .files import download_images_from_content, upload_images_from_content
-from .exceptions import URLMismatchError
+from canvas_common import URLMismatchError
 
 logger = logging.getLogger("canvas_author.sync")
 
@@ -225,7 +225,7 @@ def push_pages(
     # Validate links before pushing if requested
     validation_result = None
     if validate_links:
-        from .validation import validate_links as run_validation, format_validation_report
+        from canvas_common import validate_links as run_validation, format_validation_report
         validation_result = run_validation(input_dir)
 
         if validation_result["issues"]:
@@ -314,7 +314,7 @@ def push_pages(
                         metadata_updated, body_updated = parse_frontmatter(updated_content)
                         if "url" in metadata_updated:
                             del metadata_updated["url"]
-                            from .frontmatter import generate_frontmatter
+                            from canvas_common import generate_frontmatter
                             updated_content = generate_frontmatter(metadata_updated) + body_updated
 
                         file_path.write_text(updated_content, encoding="utf-8")

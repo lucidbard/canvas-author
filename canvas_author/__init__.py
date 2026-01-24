@@ -6,9 +6,9 @@ Uses pandoc for markdown <-> HTML conversion and supports two-way sync with loca
 
 __version__ = "0.1.2"
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient
 from .pandoc import markdown_to_html, html_to_markdown
-from .exceptions import (
+from canvas_common import (
     CanvasMCPError,
     ConfigurationError,
     AuthenticationError,

@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 
-from .frontmatter import parse_frontmatter, generate_frontmatter
+from canvas_common import parse_frontmatter, generate_frontmatter
 from .pandoc import html_to_markdown, markdown_to_html, is_pandoc_available
 
 logger = logging.getLogger("canvas_author.quiz_format")

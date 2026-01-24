@@ -68,13 +68,13 @@ def _load_env():
 
 _load_env()
 
-from .client import get_canvas_client
+from canvas_common import get_canvas_client
 from .pages import list_pages, get_page, create_page, update_page
 from .pandoc import is_pandoc_available
 from .assignments import list_courses
-from .frontmatter import parse_frontmatter, generate_frontmatter
+from canvas_common import parse_frontmatter, generate_frontmatter
 from .sync import predict_canvas_url, update_internal_links
-from .exceptions import URLMismatchError
+from canvas_common import URLMismatchError
 from . import quiz_sync, quizzes, module_sync, course_sync, rubric_sync, submission_sync, discussion_sync, announcement_sync
 
 # Config filename

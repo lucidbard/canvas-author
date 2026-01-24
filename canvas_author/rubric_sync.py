@@ -11,20 +11,11 @@ from typing import Dict, Any, List, Optional
 
 import yaml
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient, slugify
 from .assignments import list_assignments, get_assignment
 from .rubrics import get_rubric, update_rubric, sync_rubric_ids
 
 logger = logging.getLogger("canvas_author.rubric_sync")
-
-
-def _slugify(title: str) -> str:
-    """Convert a title to a filesystem-safe slug."""
-    slug = title.lower()
-    slug = re.sub(r'[^\w\s-]', '', slug)
-    slug = re.sub(r'[\s_]+', '-', slug)
-    slug = re.sub(r'-+', '-', slug)
-    return slug.strip('-')
 
 
 def _rubric_to_yaml(assignment: Dict, rubric: Dict) -> Dict:
@@ -135,7 +126,7 @@ def pull_rubrics(
     for assignment in assignments:
         assignment_id = assignment["id"]
         name = assignment.get("name", f"assignment-{assignment_id}")
-        slug = _slugify(name)
+        slug = slugify(name)
         filename = f"{slug}.rubric.yaml"
         file_path = output_path / filename
 

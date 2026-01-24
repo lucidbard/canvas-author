@@ -9,8 +9,8 @@ import requests
 from typing import Dict, Any, Optional, Tuple, List
 from canvasapi.exceptions import ResourceDoesNotExist, CanvasException
 
-from .client import get_canvas_client, CanvasClient
-from .exceptions import ResourceNotFoundError, APIError
+from canvas_common import get_canvas_client, CanvasClient
+from canvas_common import ResourceNotFoundError, APIError
 
 logger = logging.getLogger("canvas_author.rubrics")
 

@@ -14,19 +14,10 @@ from datetime import datetime
 
 import yaml
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient, slugify
 from .assignments import list_assignments, get_assignment, list_submissions
 
 logger = logging.getLogger("canvas_author.submission_sync")
-
-
-def _slugify(title: str) -> str:
-    """Convert a title to a filesystem-safe slug."""
-    slug = title.lower()
-    slug = re.sub(r'[^\w\s-]', '', slug)
-    slug = re.sub(r'[\s_]+', '-', slug)
-    slug = re.sub(r'-+', '-', slug)
-    return slug.strip('-')
 
 
 def _download_attachment(url: str, output_path: Path, client: CanvasClient) -> bool:
@@ -131,7 +122,7 @@ def pull_submissions(
     # Get assignment info
     assignment = get_assignment(course_id, assignment_id, client=canvas)
     assignment_name = assignment.get('name', f'assignment-{assignment_id}')
-    slug = _slugify(assignment_name)
+    slug = slugify(assignment_name)
 
     # Create output directory
     if anonymize:
@@ -191,7 +182,7 @@ def pull_submissions(
             else:
                 user = sub.get('user', {})
                 user_name = user.get('sortable_name', user.get('name', f"user-{sub['user_id']}"))
-                user_name = _slugify(user_name)
+                user_name = slugify(user_name)
                 student_id = f"{user_name}_{sub['user_id']}"
 
             # Build submission entry for YAML
@@ -316,7 +307,7 @@ def submission_status(
     # Check if locally downloaded
     if local_dir:
         local_path = Path(local_dir)
-        assignment_slug = _slugify(assignment.get('name', ''))
+        assignment_slug = slugify(assignment.get('name', ''))
 
         # Check for regular or anonymous downloads
         regular_dir = local_path / assignment_slug

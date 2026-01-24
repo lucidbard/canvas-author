@@ -8,9 +8,9 @@ import logging
 from typing import List, Dict, Any, Optional
 from canvasapi.exceptions import ResourceDoesNotExist, CanvasException
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient
 from .pandoc import markdown_to_html, html_to_markdown
-from .exceptions import ResourceNotFoundError, APIError
+from canvas_common import ResourceNotFoundError, APIError
 
 logger = logging.getLogger("canvas_author.pages")
 

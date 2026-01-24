@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient, slugify
 from .quizzes import (
     list_quizzes,
     get_quiz,
@@ -30,19 +30,10 @@ from .quiz_format import (
     Question,
 )
 from .files import download_images_from_content, upload_images_from_content
-from .exceptions import ResourceNotFoundError
+from canvas_common import ResourceNotFoundError
 from .pandoc import markdown_to_html, is_pandoc_available
 
 logger = logging.getLogger("canvas_author.quiz_sync")
-
-
-def _slugify(title: str) -> str:
-    """Convert a title to a filesystem-safe slug."""
-    slug = title.lower()
-    slug = re.sub(r'[^\w\s-]', '', slug)
-    slug = re.sub(r'[\s_]+', '-', slug)
-    slug = re.sub(r'-+', '-', slug)
-    return slug.strip('-')
 
 
 def pull_quizzes(
@@ -87,7 +78,7 @@ def pull_quizzes(
     for quiz_meta in quizzes:
         quiz_id = str(quiz_meta["id"])
         title = quiz_meta["title"]
-        slug = _slugify(title)
+        slug = slugify(title)
         filename = f"{slug}.quiz.md"
         file_path = output_path / filename
 

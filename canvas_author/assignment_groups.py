@@ -8,8 +8,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from canvasapi.exceptions import ResourceDoesNotExist
 
-from .client import get_canvas_client, CanvasClient
-from .exceptions import ResourceNotFoundError
+from canvas_common import get_canvas_client, CanvasClient
+from canvas_common import ResourceNotFoundError
 
 logger = logging.getLogger("canvas_author.assignment_groups")
 

@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import yaml
 
-from .client import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient
 from .assignment_groups import list_assignment_groups
 
 logger = logging.getLogger("canvas_author.course_sync")
