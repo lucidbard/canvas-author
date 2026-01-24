@@ -220,11 +220,15 @@ def push_pages(
     input_dir: str,
     create_missing: bool = True,
     update_existing: bool = True,
-    upload_images: bool = True
+    upload_images: bool = True,
+    validate_links: bool = True
 ) -> str:
     """
     Push local markdown files to Canvas as wiki pages.
     Local images are uploaded to Canvas with URLs rewritten to Canvas paths.
+
+    Validates internal links before pushing to prevent broken links on Canvas.
+    If validation fails, returns an error without pushing any pages.
 
     Args:
         course_id: Canvas course ID
@@ -232,16 +236,21 @@ def push_pages(
         create_missing: Create pages that don't exist on Canvas (default: true)
         update_existing: Update pages that already exist (default: true)
         upload_images: Upload local images to Canvas (default: true)
+        validate_links: Validate internal links before pushing (default: true)
 
     Returns:
-        JSON with results: created, updated, skipped, errors, images_uploaded
+        JSON with results: created, updated, skipped, errors, images_uploaded, validation
+
+    Raises:
+        ValueError: If validate_links=true and broken links are found
     """
     try:
         result = sync.push_pages(
             course_id, input_dir,
             create_missing=create_missing,
             update_existing=update_existing,
-            upload_images=upload_images
+            upload_images=upload_images,
+            validate_links=validate_links
         )
         return json.dumps(result, indent=2)
     except Exception as e:

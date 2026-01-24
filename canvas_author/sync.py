@@ -192,6 +192,7 @@ def push_pages(
     update_existing: bool = True,
     upload_images: bool = True,
     force_rename: bool = False,
+    validate_links: bool = True,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
@@ -205,18 +206,34 @@ def push_pages(
         upload_images: Upload local images to Canvas
         force_rename: If True, allow pushing even when local URL won't match
                       Canvas-generated URL (will auto-rename local files)
+        validate_links: If True, validate internal links before pushing (default: True)
         client: Optional CanvasClient instance
 
     Returns:
-        Dict with results: created, updated, skipped, errors, images_uploaded, files_renamed
+        Dict with results: created, updated, skipped, errors, images_uploaded, files_renamed,
+                          validation (if validate_links=True)
 
     Raises:
         URLMismatchError: When local URL won't match Canvas URL and force_rename=False
+        ValueError: When validate_links=True and broken links are found
     """
     canvas = client or get_canvas_client()
     input_path = Path(input_dir)
     if not input_path.exists():
         raise ValueError(f"Input directory does not exist: {input_dir}")
+
+    # Validate links before pushing if requested
+    validation_result = None
+    if validate_links:
+        from .validation import validate_links as run_validation, format_validation_report
+        validation_result = run_validation(input_dir)
+
+        if validation_result["issues"]:
+            # Format a helpful error message
+            report = format_validation_report(validation_result)
+            error_msg = f"Link validation failed with {len(validation_result['issues'])} issue(s):\n\n{report}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
     # Get existing pages
     existing_pages = {p["url"]: p for p in list_pages(course_id, canvas)}
@@ -330,6 +347,14 @@ def push_pages(
             logger.error(f"Error pushing {file_path}: {e}")
 
     logger.info(f"Push complete: {len(results['created'])} created, {len(results['updated'])} updated, {len(results['skipped'])} skipped, {len(results['errors'])} errors")
+
+    # Add validation results if validation was run
+    if validation_result:
+        results["validation"] = {
+            "validated": True,
+            "stats": validation_result["stats"]
+        }
+
     return results
 
 
