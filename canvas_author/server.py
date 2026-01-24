@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 from mcp.server import FastMCP
 
-from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module, discussion_sync, announcement_sync, draft_storage
+from . import pages, assignments, assignment_groups, discussions, rubrics, sync, quizzes, quiz_sync, course_sync, rubric_sync, submission_sync, module_sync, assignment_sync, files as files_module, discussion_sync, announcement_sync, draft_storage, conversations
 from .pandoc import is_pandoc_available
 from .workflow import (
     WorkflowManager,
@@ -665,6 +665,53 @@ def assignment_sync_status(course_id: str, local_dir: str) -> str:
     """
     try:
         result = assignment_sync.assignment_sync_status(course_id, local_dir)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# Conversations Tools
+# =============================================================================
+
+@mcp.tool()
+def message_non_submitters(
+    course_id: str,
+    assignment_id: str,
+    subject: str,
+    message: str,
+    anonymize: bool = True
+) -> str:
+    """
+    Send a Canvas message to all students who haven't submitted an assignment.
+
+    NOTE: By default, student identities are anonymized to protect privacy when
+    using AI assistants. Use anonymize=False only when working locally without AI review.
+
+    Args:
+        course_id: Canvas course ID
+        assignment_id: Canvas assignment ID
+        subject: Message subject line
+        message: Message body (can include HTML)
+        anonymize: Whether to anonymize student identities in response (default: True for AI privacy)
+
+    Returns:
+        JSON with results:
+        - message_sent: bool
+        - recipient_count: int
+        - recipients: List of recipients (anonymized if anonymize=True)
+        - assignment_name: str
+        - total_students: int (total enrolled)
+        - submitted_count: int (already submitted)
+    """
+    try:
+        result = conversations.message_non_submitters(
+            course_id=course_id,
+            assignment_id=assignment_id,
+            subject=subject,
+            message=message,
+            anonymize=anonymize
+        )
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
