@@ -408,7 +408,7 @@ Canvas LMS strips `<style>` tags and external stylesheets from wiki pages. This 
 Apply pre-defined styles when converting markdown:
 
 ```python
-from canvas_mcp import markdown_to_html
+from canvas_author import markdown_to_html
 
 # Use default Canvas-friendly styling
 html = markdown_to_html(content, apply_styles=True)
@@ -429,7 +429,7 @@ Available presets:
 Add your own CSS rules:
 
 ```python
-from canvas_mcp import markdown_to_html, inline_styles
+from canvas_author import markdown_to_html, inline_styles
 
 # Custom CSS with markdown conversion
 custom_css = """
@@ -447,7 +447,7 @@ html = inline_styles(existing_html, css=custom_css, preset="default")
 Create styled elements programmatically:
 
 ```python
-from canvas_mcp import add_callout_box, add_styled_table
+from canvas_author import add_callout_box, add_styled_table
 
 # Callout boxes (info, warning, success, danger, note)
 callout = add_callout_box(
@@ -472,7 +472,7 @@ table = add_styled_table(
 Load styles from an external CSS file:
 
 ```python
-from canvas_mcp import inline_styles_from_file
+from canvas_author import inline_styles_from_file
 
 html = inline_styles_from_file(
     existing_html,
@@ -500,15 +500,15 @@ custom_css: |
 Use canvas-author as a library:
 
 ```python
-from canvas_mcp import (
+from canvas_author import (
     get_canvas_client,
     markdown_to_html,
     html_to_markdown,
     inline_styles,
 )
-from canvas_mcp.pages import list_pages, get_page, create_page
-from canvas_mcp.assignments import list_assignments
-from canvas_mcp.discussions import get_discussion_posts
+from canvas_author.pages import list_pages, get_page, create_page
+from canvas_author.assignments import list_assignments
+from canvas_author.discussions import get_discussion_posts
 
 # Get a Canvas client
 client = get_canvas_client()

@@ -1,5 +1,5 @@
 """
-Pytest fixtures for canvas_mcp tests.
+Pytest fixtures for canvas_author tests.
 """
 
 import pytest

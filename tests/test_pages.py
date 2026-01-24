@@ -6,8 +6,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from canvasapi.exceptions import ResourceDoesNotExist
 
-from canvas_mcp import pages
-from canvas_mcp.exceptions import ResourceNotFoundError
+from canvas_author import pages
+from canvas_author.exceptions import ResourceNotFoundError
 
 
 class TestListPages:

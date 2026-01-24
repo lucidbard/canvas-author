@@ -1,1 +1,1 @@
-"""End-to-end tests for canvas_mcp against a real Canvas instance."""
+"""End-to-end tests for canvas_author against a real Canvas instance."""

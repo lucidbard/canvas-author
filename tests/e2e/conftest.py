@@ -61,7 +61,7 @@ def e2e_config() -> Dict[str, Any]:
 @pytest.fixture(scope="session")
 def canvas_client(e2e_config: Dict[str, Any]):
     """Provide a real Canvas client for E2E tests."""
-    from canvas_mcp.client import CanvasClient
+    from canvas_author.client import CanvasClient
 
     client = CanvasClient(
         domain=e2e_config["domain"],
@@ -107,7 +107,7 @@ def cleanup_test_pages(canvas_client, test_course_id: str, e2e_config: Dict[str,
 
     All pages with URLs starting with 'e2e-test-' are cleaned up.
     """
-    from canvas_mcp.pages import list_pages, delete_page
+    from canvas_author.pages import list_pages, delete_page
 
     def _cleanup():
         if e2e_config["skip_cleanup"]:

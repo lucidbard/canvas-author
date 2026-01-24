@@ -1,1 +1,1 @@
-"""Tests for canvas_mcp package."""
+"""Tests for canvas_author package."""

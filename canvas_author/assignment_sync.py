@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from canvas_common import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient, sanitize_filename as sanitize_filename_common
 from .assignments import list_assignments, get_assignment
 from .pandoc import html_to_markdown, markdown_to_html, is_pandoc_available
 from .datetime_utils import convert_to_iso8601, convert_from_iso8601, convert_to_datetime
@@ -17,12 +17,8 @@ from .datetime_utils import convert_to_iso8601, convert_from_iso8601, convert_to
 logger = logging.getLogger("canvas_author.assignment_sync")
 
 
-def sanitize_filename(name: str) -> str:
-    """Convert an assignment name to a safe filename."""
-    # Replace spaces and special chars with hyphens
-    safe = re.sub(r'[^\w\s-]', '', name.lower())
-    safe = re.sub(r'[-\s]+', '-', safe).strip('-')
-    return safe
+# Use canvas_common.sanitize_filename instead of local implementation
+sanitize_filename = sanitize_filename_common
 
 
 def create_assignment_frontmatter(

@@ -5,7 +5,7 @@ Tests for the pandoc module.
 import pytest
 import subprocess
 from unittest.mock import patch, MagicMock
-from canvas_mcp.pandoc import (
+from canvas_author.pandoc import (
     is_pandoc_available,
     markdown_to_html,
     html_to_markdown,

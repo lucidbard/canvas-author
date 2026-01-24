@@ -6,9 +6,9 @@ Run with: pytest tests/e2e/test_e2e_sync.py -v -m e2e
 
 import pytest
 from pathlib import Path
-from canvas_mcp.sync import pull_pages, push_pages, sync_status
-from canvas_mcp.pages import create_page
-from canvas_mcp.frontmatter import parse_frontmatter
+from canvas_author.sync import pull_pages, push_pages, sync_status
+from canvas_author.pages import create_page
+from canvas_author.frontmatter import parse_frontmatter
 
 
 pytestmark = pytest.mark.e2e

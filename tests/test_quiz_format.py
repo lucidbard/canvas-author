@@ -1,7 +1,7 @@
 """Tests for quiz markdown format parser and generator."""
 
 import pytest
-from canvas_mcp.quiz_format import (
+from canvas_author.quiz_format import (
     parse_quiz_markdown,
     generate_quiz_markdown,
     questions_from_canvas,

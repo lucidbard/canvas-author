@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from canvas_common import get_canvas_client, CanvasClient
+from canvas_common import get_canvas_client, CanvasClient, sanitize_filename as sanitize_filename_common
 from .pages import list_pages, get_page, create_page, update_page
 from canvas_common import parse_frontmatter, create_page_frontmatter, update_frontmatter
 from .files import download_images_from_content, upload_images_from_content
@@ -96,12 +96,8 @@ def update_internal_links(
     return updated_files
 
 
-def sanitize_filename(title: str) -> str:
-    """Convert a page title to a safe filename."""
-    # Replace spaces and special chars with hyphens
-    safe = re.sub(r'[^\w\s-]', '', title.lower())
-    safe = re.sub(r'[-\s]+', '-', safe).strip('-')
-    return safe
+# Use canvas_common.sanitize_filename instead of local implementation
+sanitize_filename = sanitize_filename_common
 
 
 def pull_pages(

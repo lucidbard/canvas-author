@@ -3,7 +3,7 @@ Tests for the frontmatter module.
 """
 
 import pytest
-from canvas_mcp.frontmatter import (
+from canvas_common import (
     parse_frontmatter,
     generate_frontmatter,
     create_page_frontmatter,

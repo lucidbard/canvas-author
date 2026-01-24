@@ -10,10 +10,10 @@ Run with: pytest tests/e2e/ -v -m e2e
 """
 
 import pytest
-from canvas_mcp.pages import (
+from canvas_author.pages import (
     create_page, get_page, update_page, delete_page, list_pages
 )
-from canvas_mcp.exceptions import ResourceNotFoundError
+from canvas_author.exceptions import ResourceNotFoundError
 
 
 pytestmark = pytest.mark.e2e

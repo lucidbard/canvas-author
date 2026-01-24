@@ -5,13 +5,13 @@ Tests for the client module.
 import os
 import pytest
 from unittest.mock import patch, MagicMock
-from canvas_mcp.client import (
+from canvas_common import (
     CanvasClient,
     get_canvas_client,
     _validate_domain,
     _validate_token,
 )
-from canvas_mcp.exceptions import (
+from canvas_author.exceptions import (
     ConfigurationError,
     ValidationError,
     AuthenticationError,
@@ -142,7 +142,7 @@ class TestGetCanvasClient:
 
     def test_caches_global_client(self):
         """Test that global client is cached."""
-        import canvas_mcp.client as client_module
+        import canvas_author.client as client_module
 
         # Clear any cached client
         client_module._canvas_client = None

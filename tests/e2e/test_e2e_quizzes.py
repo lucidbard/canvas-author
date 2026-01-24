@@ -6,17 +6,17 @@ Run with: pytest tests/e2e/test_e2e_quizzes.py -v -m e2e
 
 import pytest
 from pathlib import Path
-from canvas_mcp.quizzes import (
+from canvas_author.quizzes import (
     list_quizzes, get_quiz, get_quiz_questions,
     create_quiz, update_quiz, delete_quiz,
     create_question, delete_question
 )
-from canvas_mcp.quiz_sync import pull_quizzes, push_quizzes, quiz_sync_status
-from canvas_mcp.quiz_format import (
+from canvas_author.quiz_sync import pull_quizzes, push_quizzes, quiz_sync_status
+from canvas_author.quiz_format import (
     parse_quiz_markdown, generate_quiz_markdown,
     Question, Answer
 )
-from canvas_mcp.exceptions import ResourceNotFoundError
+from canvas_author.exceptions import ResourceNotFoundError
 
 
 pytestmark = pytest.mark.e2e

@@ -3,7 +3,7 @@ Tests for the exceptions module.
 """
 
 import pytest
-from canvas_mcp.exceptions import (
+from canvas_common import (
     CanvasMCPError,
     ConfigurationError,
     AuthenticationError,
