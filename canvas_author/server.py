@@ -1959,6 +1959,208 @@ def get_review_conflicts(
 
 
 @mcp.tool()
+def submit_human_review(
+    course_path: str,
+    worktree_name: str,
+    item_id: str,
+    item_title: str,
+    item_type: str,
+    canvas_id: str,
+    file_path: str,
+    reviewer_name: str,
+    decision: str,
+    comments: str,
+    severity: str = "medium"
+) -> str:
+    """
+    Submit a human review for an item.
+
+    Args:
+        course_path: Path to course directory
+        worktree_name: Name of the worktree being reviewed
+        item_id: Unified item ID (e.g., 'page:12345')
+        item_title: Human-readable item title
+        item_type: Type of item (page, quiz, assignment, rubric)
+        canvas_id: Canvas object ID
+        file_path: Local file path
+        reviewer_name: Name of human reviewer
+        decision: approved, rejected, needs_revision
+        comments: Review comments/feedback
+        severity: low, medium, high (default: medium)
+
+    Returns:
+        JSON with review result
+    """
+    try:
+        wm = WorkflowManager(course_path)
+
+        # Create or load session
+        session = None
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                break
+            except:
+                pass
+
+        if not session:
+            from .workflow import WorktreeReviewSession
+            session = WorktreeReviewSession(worktree_name, "")
+
+        # Add or update item review
+        item_review = session.get_item_review(item_id)
+        if not item_review:
+            from .workflow import ItemReview
+            item_review = ItemReview(item_id, item_title, item_type, canvas_id, file_path)
+
+        review_pass = ReviewPass(
+            pass_type="human",
+            agent_id=reviewer_name,
+            agent_role="human_reviewer",
+            decision=decision,
+            reasoning=comments,
+            severity=severity
+        )
+        item_review.add_pass(review_pass)
+        session.add_item_review(item_review)
+
+        # Save session
+        wm.save_review_session(session)
+
+        return json.dumps({
+            "status": "success",
+            "review_pass": review_pass.to_dict(),
+            "item_status": item_review.get_status()
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def list_worktrees_for_review(course_path: str) -> str:
+    """
+    List all worktrees that need review.
+
+    Args:
+        course_path: Path to course directory
+
+    Returns:
+        JSON list of worktrees with review status and item counts
+    """
+    try:
+        from pathlib import Path
+        import subprocess
+
+        course_path_obj = Path(course_path)
+        worktrees_dir = course_path_obj / ".canvas-author" / "worktrees"
+
+        if not worktrees_dir.exists():
+            return json.dumps({"worktrees": []})
+
+        wm = WorkflowManager(course_path)
+        worktrees = []
+
+        for worktree_dir in worktrees_dir.iterdir():
+            if not worktree_dir.is_dir():
+                continue
+
+            worktree_name = worktree_dir.name
+
+            # Get review status
+            session = None
+            for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+                try:
+                    session = wm.load_review_session(review_file.name)
+                    break
+                except:
+                    pass
+
+            if session:
+                summary = session.get_summary()
+            else:
+                summary = {"approved": 0, "rejected": 0, "needs_revision": 0, "pending": 0}
+
+            # Count files in worktree
+            file_count = 0
+            for ext in ["*.md", "*.yaml"]:
+                file_count += len(list(worktree_dir.rglob(ext)))
+
+            worktrees.append({
+                "name": worktree_name,
+                "path": str(worktree_dir),
+                "file_count": file_count,
+                "review_summary": summary,
+                "has_reviews": session is not None
+            })
+
+        return json.dumps({"worktrees": worktrees}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def get_worktree_items(course_path: str, worktree_name: str) -> str:
+    """
+    Get all content items in a worktree with their review status.
+
+    Args:
+        course_path: Path to course directory
+        worktree_name: Name of the worktree
+
+    Returns:
+        JSON list of items with review status
+    """
+    try:
+        from pathlib import Path
+
+        course_path_obj = Path(course_path)
+        worktree_path = course_path_obj / ".canvas-author" / "worktrees" / worktree_name
+
+        if not worktree_path.exists():
+            return json.dumps({"error": f"Worktree not found: {worktree_name}"})
+
+        wm = WorkflowManager(course_path)
+
+        # Load review session
+        session = None
+        for review_file in wm.reviews_dir.glob(f"{worktree_name}_*.json"):
+            try:
+                session = wm.load_review_session(review_file.name)
+                break
+            except:
+                pass
+
+        items = []
+
+        # Scan for content files
+        for item_type, pattern in [
+            ("page", "pages/*.md"),
+            ("assignment", "assignments/*.md"),
+            ("quiz", "quizzes/*.quiz.md"),
+            ("discussion", "discussions/*.discussion.md")
+        ]:
+            for file_path in worktree_path.glob(pattern):
+                item_id = f"{item_type}:{file_path.stem}"
+
+                # Get review status
+                item_review = session.get_item_review(item_id) if session else None
+
+                items.append({
+                    "id": item_id,
+                    "type": item_type,
+                    "title": file_path.stem.replace("-", " ").title(),
+                    "file_path": str(file_path.relative_to(worktree_path)),
+                    "review_status": item_review.get_status() if item_review else "pending",
+                    "review_count": len(item_review.passes) if item_review else 0,
+                    "has_human_review": any(p.pass_type == "human" for p in item_review.passes) if item_review else False
+                })
+
+        return json.dumps({"worktree": worktree_name, "items": items}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
 def escalate_review_conflict(
     course_path: str,
     worktree_name: str,

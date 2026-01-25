@@ -21,8 +21,8 @@ logger = logging.getLogger("canvas_author.workflow")
 
 class ReviewPass:
     """Represents a single review pass on an item."""
-    
-    PASS_TYPES = ["style", "fact_check", "consistency"]
+
+    PASS_TYPES = ["style", "fact_check", "consistency", "human"]
     DECISIONS = ["approved", "rejected", "needs_revision"]
     
     def __init__(
