@@ -1,0 +1,24 @@
+[Unit]
+Description=Canvas Author MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=%u
+WorkingDirectory=%h
+Environment="CANVAS_DOMAIN=webcourses.ucf.edu"
+Environment="CANVAS_API_TOKEN="
+Environment="FASTMCP_HOST=127.0.0.1"
+Environment="FASTMCP_PORT=8000"
+Environment="MCP_TRANSPORT=streamable-http"
+ExecStart=/usr/bin/python3 -m canvas_author.server
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=canvas-author-mcp
+
+[Install]
+WantedBy=default.target
