@@ -277,31 +277,47 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     print(f"Found {len(md_files)} markdown files")
 
-    # Check if we're in a git repo and can use git diff for change detection
-    use_git_diff = False
+    # Check for changed files using mtime vs Canvas updated_at
+    use_change_detection = False
     changed_files = set()
     if not args.force:
         try:
-            import subprocess
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
-                cwd=directory,
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                use_git_diff = True
-                # Get changed files relative to pages directory
-                for line in result.stdout.strip().split('\n'):
-                    if line.endswith('.md'):
-                        # Convert to Path and make relative to directory if possible
-                        changed_path = (base_directory / line).resolve()
-                        if changed_path.is_relative_to(directory):
-                            changed_files.add(changed_path.relative_to(directory))
-                if changed_files:
-                    print(f"Git detected {len(changed_files)} changed files (use --force to push all)")
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            from datetime import datetime, timezone
+            import dateutil.parser
+
+            # Build map of Canvas page updated times
+            canvas_updated = {}
+            for url, page_info in canvas_pages.items():
+                if page_info.get('updated_at'):
+                    try:
+                        canvas_time = dateutil.parser.parse(page_info['updated_at'])
+                        canvas_updated[url] = canvas_time
+                    except:
+                        pass
+
+            # Check which local files are newer than Canvas
+            for file_path in md_files:
+                relative_path = file_path.relative_to(directory)
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    metadata, _ = parse_frontmatter(content)
+                    url = metadata.get("canvas_url") or metadata.get("url") or file_path.stem
+
+                    # Get file modification time
+                    file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+
+                    # Compare with Canvas updated_at
+                    canvas_time = canvas_updated.get(url)
+                    if canvas_time is None or file_mtime > canvas_time:
+                        changed_files.add(relative_path)
+                except:
+                    # If we can't determine, include it
+                    changed_files.add(relative_path)
+
+            if changed_files:
+                use_change_detection = True
+                print(f"Detected {len(changed_files)} files modified since last Canvas sync (use --force to push all)")
+        except Exception:
             pass
 
     created = 0
@@ -328,8 +344,8 @@ def cmd_push(args: argparse.Namespace) -> int:
             if isinstance(published, str):
                 published = published.lower() == "true"
 
-            # Skip if using git diff and file hasn't changed
-            if use_git_diff and changed_files and relative_path not in changed_files:
+            # Skip if using change detection and file hasn't changed
+            if use_change_detection and changed_files and relative_path not in changed_files:
                 skipped += 1
                 continue
 
