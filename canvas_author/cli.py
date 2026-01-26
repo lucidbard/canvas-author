@@ -221,15 +221,26 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
 def cmd_push(args: argparse.Namespace) -> int:
     """Push local markdown files to Canvas wiki pages."""
-    directory = Path(args.dir).resolve()
+    base_directory = Path(args.dir).resolve()
 
-    # Load config
-    config = load_course_config(directory)
+    # Load config from base directory
+    config = load_course_config(base_directory)
     if not config:
-        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {base_directory}' first")
         return 1
 
     course_id = config["course_id"]
+
+    # Use pages_directory from config if available, otherwise use base directory
+    pages_subdir = config.get("pages_directory")
+    if pages_subdir:
+        directory = (base_directory / pages_subdir).resolve()
+        if not directory.exists():
+            print(f"Error: Configured pages_directory '{pages_subdir}' does not exist")
+            return 1
+        print(f"Using pages directory from config: {directory}")
+    else:
+        directory = base_directory
 
     # Check pandoc
     if not is_pandoc_available():
@@ -1361,6 +1372,119 @@ def cmd_push_announcements(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_delete_page(args: argparse.Namespace) -> int:
+    """Delete a single page from Canvas by URL."""
+    directory = Path(args.dir).resolve()
+    
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized")
+        return 1
+    
+    course_id = config["course_id"]
+    page_url = args.page_url
+    
+    try:
+        client = get_canvas_client()
+        course = client.get_course(course_id)
+        
+        # Delete the page
+        url = f"{client.base_url}/courses/{course_id}/pages/{page_url}"
+        response = client.session.delete(url)
+        
+        if response.status_code == 200:
+            print(f"✓ Deleted page: {page_url}")
+            return 0
+        else:
+            print(f"✗ Failed to delete {page_url}: {response.status_code}")
+            print(f"  Response: {response.text}")
+            return 1
+    except Exception as e:
+        print(f"Error deleting page: {e}")
+        return 1
+
+
+def cmd_delete_orphaned_pages(args: argparse.Namespace) -> int:
+    """Delete pages that exist on Canvas but not locally."""
+    base_directory = Path(args.dir).resolve()
+    
+    config = load_course_config(base_directory)
+    if not config:
+        print(f"Error: Directory not initialized")
+        return 1
+    
+    course_id = config["course_id"]
+    
+    # Get pages directory from config
+    pages_subdir = config.get("pages_directory")
+    if pages_subdir:
+        pages_directory = (base_directory / pages_subdir).resolve()
+    else:
+        pages_directory = base_directory
+    
+    if not pages_directory.exists():
+        print(f"Error: Pages directory does not exist: {pages_directory}")
+        return 1
+    
+    try:
+        client = get_canvas_client()
+        course = client.get_course(course_id)
+        
+        # Get all Canvas pages
+        canvas_pages = list_pages(course_id, client, course=course)
+        
+        # Get local page URLs
+        local_pages = set()
+        for file in pages_directory.glob("*.md"):
+            page_url = file.stem
+            local_pages.add(page_url)
+        
+        # Find orphaned pages
+        orphaned = [p for p in canvas_pages if p["url"] not in local_pages]
+        
+        if not orphaned:
+            print("No orphaned pages found on Canvas")
+            return 0
+        
+        print(f"Found {len(orphaned)} orphaned pages on Canvas:")
+        for i, page in enumerate(orphaned[:20], 1):
+            published = "✓" if page.get("published") else "-"
+            print(f"  {published} {page['url']} ({page['title']})")
+        
+        if len(orphaned) > 20:
+            print(f"  ... and {len(orphaned) - 20} more")
+        
+        # Confirm deletion
+        if not args.yes:
+            response = input(f"\nDelete {len(orphaned)} orphaned pages? (yes/no): ")
+            if response.lower() != "yes":
+                print("Cancelled")
+                return 0
+        
+        # Delete pages
+        deleted = 0
+        failed = 0
+        for page in orphaned:
+            page_url = page["url"]
+            url = f"{client.base_url}/courses/{course_id}/pages/{page_url}"
+            response = client.session.delete(url)
+            
+            if response.status_code == 200:
+                deleted += 1
+                if args.verbose:
+                    print(f"✓ Deleted: {page_url}")
+            else:
+                failed += 1
+                print(f"✗ Failed: {page_url} ({response.status_code})")
+        
+        print(f"\nDeleted: {deleted}, Failed: {failed}")
+        return 0 if failed == 0 else 1
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1409,6 +1533,18 @@ def main() -> int:
 
     # server command (for MCP)
     server_parser = subparsers.add_parser("server", help="Run MCP server")
+
+    # delete-page command
+    delete_page_parser = subparsers.add_parser("delete-page", help="Delete a single page from Canvas")
+    delete_page_parser.add_argument("page_url", help="URL of the page to delete")
+    delete_page_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+
+    # delete-orphaned-pages command
+    delete_orphaned_parser = subparsers.add_parser("delete-orphaned-pages",
+                                                    help="Delete pages on Canvas that don't exist locally")
+    delete_orphaned_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    delete_orphaned_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+    delete_orphaned_parser.add_argument("--verbose", "-v", action="store_true", help="Show each deletion")
 
     # pull-quizzes command
     pull_quizzes_parser = subparsers.add_parser("pull-quizzes", help="Pull quizzes from Canvas")
@@ -1526,6 +1662,10 @@ def main() -> int:
         from .server import main as server_main
         server_main()
         return 0
+    elif args.command == "delete-page":
+        return cmd_delete_page(args)
+    elif args.command == "delete-orphaned-pages":
+        return cmd_delete_orphaned_pages(args)
     elif args.command == "pull-quizzes":
         return cmd_pull_quizzes(args)
     elif args.command == "push-quizzes":
@@ -1570,3 +1710,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
