@@ -277,6 +277,33 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     print(f"Found {len(md_files)} markdown files")
 
+    # Check if we're in a git repo and can use git diff for change detection
+    use_git_diff = False
+    changed_files = set()
+    if not args.force:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                use_git_diff = True
+                # Get changed files relative to pages directory
+                for line in result.stdout.strip().split('\n'):
+                    if line.endswith('.md'):
+                        # Convert to Path and make relative to directory if possible
+                        changed_path = (base_directory / line).resolve()
+                        if changed_path.is_relative_to(directory):
+                            changed_files.add(changed_path.relative_to(directory))
+                if changed_files:
+                    print(f"Git detected {len(changed_files)} changed files (use --force to push all)")
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+
     created = 0
     updated = 0
     skipped = 0
@@ -294,12 +321,17 @@ def cmd_push(args: argparse.Namespace) -> int:
                 continue
 
             # Determine page URL and title
-            # Prefer canvas_url (Canvas-generated) over url (legacy) over filename
+            # Prefer canvas_url (Canvas-generated) over url (legacy) or filename
             url = metadata.get("canvas_url") or metadata.get("url") or file_path.stem
             title = metadata.get("title") or file_path.stem.replace("-", " ").title()
             published = metadata.get("published", True)
             if isinstance(published, str):
                 published = published.lower() == "true"
+
+            # Skip if using git diff and file hasn't changed
+            if use_git_diff and changed_files and relative_path not in changed_files:
+                skipped += 1
+                continue
 
             # Transform local links to Canvas links
             body_for_canvas = course_sync.transform_links_to_canvas(body, course_id, client.domain)
@@ -1620,10 +1652,11 @@ def main() -> int:
     # push command
     push_parser = subparsers.add_parser("push", help="Push pages to Canvas")
     push_parser.add_argument("--dir", "-d", default=".", help="Directory to push from (default: current)")
+    push_parser.add_argument("--force", "-f", action="store_true", help="Push all files, ignoring git diff")
     push_parser.add_argument("--create-only", action="store_true", help="Only create new pages, don't update")
     push_parser.add_argument("--update-only", action="store_true", help="Only update existing pages, don't create")
     push_parser.add_argument("--no-update-meta", action="store_true", help="Don't update local frontmatter after push")
-    push_parser.add_argument("--force-rename", action="store_true", 
+    push_parser.add_argument("--force-rename", action="store_true",
                             help="Allow pushing when filename differs from Canvas-generated URL (will auto-rename files)")
 
     # create-page command
