@@ -74,6 +74,7 @@ from .pandoc import is_pandoc_available
 from .assignments import list_courses
 from canvas_common import parse_frontmatter, generate_frontmatter
 from .sync import predict_canvas_url, update_internal_links
+from .files import upload_images_from_content
 from canvas_common import URLMismatchError
 from . import quiz_sync, quizzes, module_sync, course_sync, rubric_sync, submission_sync, discussion_sync, announcement_sync
 
@@ -349,12 +350,44 @@ def cmd_push(args: argparse.Namespace) -> int:
                 skipped += 1
                 continue
 
+            # Upload images and rewrite URLs to Canvas paths
+            body_with_images, uploaded = upload_images_from_content(
+                body, course_id, directory, client, is_markdown=True
+            )
+
             # Transform local links to Canvas links
-            body_for_canvas = course_sync.transform_links_to_canvas(body, course_id, client.domain)
+            body_for_canvas = course_sync.transform_links_to_canvas(body_with_images, course_id, client.domain)
 
             if url in canvas_pages:
                 # Update existing page
                 if not args.create_only:
+                    # Conflict detection: check if Canvas version is newer than local
+                    canvas_updated_at = canvas_pages[url].get('updated_at')
+                    local_updated_at = metadata.get('updated_at')
+
+                    if canvas_updated_at and local_updated_at:
+                        try:
+                            from dateutil import parser as date_parser
+                            canvas_time = date_parser.parse(canvas_updated_at)
+                            local_time = date_parser.parse(local_updated_at)
+
+                            # Conflict: Canvas was edited after local version
+                            if canvas_time > local_time:
+                                if args.force:
+                                    print(f"  ⚠ {relative_path}: Canvas version newer, overwriting with --force")
+                                else:
+                                    print(f"  ✗ {relative_path}: CONFLICT - Canvas edited after local version")
+                                    print(f"      Canvas: {canvas_updated_at}")
+                                    print(f"      Local:  {local_updated_at}")
+                                    print(f"      → Run 'canvas-author pull' to get Canvas changes")
+                                    print(f"      → Or use '--force' to overwrite Canvas version")
+                                    errors += 1
+                                    continue
+                        except Exception as e:
+                            # If date parsing fails, warn but proceed
+                            if args.verbose:
+                                print(f"  ? {relative_path}: Could not parse timestamps, proceeding")
+
                     update_page(
                         course_id=course_id,
                         page_url=url,
