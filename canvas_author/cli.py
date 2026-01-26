@@ -373,7 +373,12 @@ def cmd_push(args: argparse.Namespace) -> int:
                         page = get_page(course_id, url, as_markdown=False, client=client, course=course)
                         metadata["updated_at"] = page.get("updated_at", "")
                         new_content = generate_frontmatter(metadata) + body
+
+                        # Preserve original mtime so change detection works on next push
+                        original_stat = file_path.stat()
                         file_path.write_text(new_content, encoding="utf-8")
+                        import os
+                        os.utime(file_path, (original_stat.st_atime, original_stat.st_mtime))
                 else:
                     skipped += 1
             else:
