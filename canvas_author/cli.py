@@ -142,15 +142,26 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_pull(args: argparse.Namespace) -> int:
     """Pull wiki pages from Canvas to local markdown files."""
-    directory = Path(args.dir).resolve()
+    base_directory = Path(args.dir).resolve()
 
     # Load config
-    config = load_course_config(directory)
+    config = load_course_config(base_directory)
     if not config:
-        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {directory}' first")
+        print(f"Error: Directory not initialized. Run 'canvas-mcp init COURSE_ID --dir {base_directory}' first")
         return 1
 
     course_id = config["course_id"]
+
+    # Use pages_directory from config if available, otherwise use base directory
+    pages_subdir = config.get("pages_directory")
+    if pages_subdir:
+        directory = (base_directory / pages_subdir).resolve()
+        if not directory.exists():
+            print(f"Error: Configured pages_directory '{pages_subdir}' does not exist")
+            return 1
+        print(f"Using pages directory from config: {directory}")
+    else:
+        directory = base_directory
 
     # Check pandoc
     if not is_pandoc_available():
@@ -1485,6 +1496,106 @@ def cmd_delete_orphaned_pages(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_pull_assignments(args: argparse.Namespace) -> int:
+    """Pull assignments from Canvas."""
+    from . import assignment_sync
+
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Use assignments_directory from config if available
+    assignments_subdir = config.get("assignments_directory", "assignments")
+    assignments_directory = (directory / assignments_subdir).resolve()
+
+    if not assignments_directory.exists():
+        print(f"Creating assignments directory: {assignments_directory}")
+        assignments_directory.mkdir(parents=True)
+
+    result = assignment_sync.pull_assignments(
+        course_id=course_id,
+        output_dir=str(assignments_directory),
+        overwrite=args.force
+    )
+
+    print(f"\nPulled: {result['pulled']}, Skipped: {result['skipped']}, Errors: {result['errors']}")
+    return 0 if result['errors'] == 0 else 1
+
+
+def cmd_push_assignments(args: argparse.Namespace) -> int:
+    """Push assignments to Canvas."""
+    from . import assignment_sync
+
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Use assignments_directory from config if available
+    assignments_subdir = config.get("assignments_directory", "assignments")
+    assignments_directory = (directory / assignments_subdir).resolve()
+
+    if not assignments_directory.exists():
+        print(f"Error: Assignments directory does not exist: {assignments_directory}")
+        return 1
+
+    # Map CLI flags to function parameters
+    create_missing = not args.update_only
+    update_existing = not args.create_only
+
+    result = assignment_sync.push_assignments(
+        course_id=course_id,
+        input_dir=str(assignments_directory),
+        create_missing=create_missing,
+        update_existing=update_existing
+    )
+
+    print(f"\nCreated: {result['created']}, Updated: {result['updated']}, Skipped: {result['skipped']}, Errors: {result['errors']}")
+    return 0 if result['errors'] == 0 else 1
+
+
+def cmd_assignment_status(args: argparse.Namespace) -> int:
+    """Show assignment sync status."""
+    from . import assignment_sync
+
+    directory = Path(args.dir).resolve()
+    config = load_course_config(directory)
+    if not config:
+        print(f"Error: Directory not initialized")
+        return 1
+
+    course_id = config["course_id"]
+
+    # Use assignments_directory from config if available
+    assignments_subdir = config.get("assignments_directory", "assignments")
+    assignments_directory = (directory / assignments_subdir).resolve()
+
+    if not assignments_directory.exists():
+        print(f"Error: Assignments directory does not exist: {assignments_directory}")
+        return 1
+
+    result = assignment_sync.assignment_sync_status(
+        course_id=course_id,
+        local_dir=str(assignments_directory)
+    )
+
+    print(f"\nTotal: {result['total']}")
+    print(f"  Up to date: {result['up_to_date']}")
+    print(f"  Local changes: {result['local_changes']}")
+    print(f"  Canvas changes: {result['canvas_changes']}")
+    print(f"  Only local: {result['only_local']}")
+    print(f"  Only canvas: {result['only_canvas']}")
+
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1545,6 +1656,21 @@ def main() -> int:
     delete_orphaned_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
     delete_orphaned_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     delete_orphaned_parser.add_argument("--verbose", "-v", action="store_true", help="Show each deletion")
+
+    # pull-assignments command
+    pull_assignments_parser = subparsers.add_parser("pull-assignments", help="Pull assignments from Canvas")
+    pull_assignments_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    pull_assignments_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+
+    # push-assignments command
+    push_assignments_parser = subparsers.add_parser("push-assignments", help="Push assignments to Canvas")
+    push_assignments_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
+    push_assignments_parser.add_argument("--create-only", action="store_true", help="Only create new assignments")
+    push_assignments_parser.add_argument("--update-only", action="store_true", help="Only update existing assignments")
+
+    # assignment-status command
+    assignment_status_parser = subparsers.add_parser("assignment-status", help="Show assignment sync status")
+    assignment_status_parser.add_argument("--dir", "-d", default=".", help="Course directory (default: current)")
 
     # pull-quizzes command
     pull_quizzes_parser = subparsers.add_parser("pull-quizzes", help="Pull quizzes from Canvas")
@@ -1666,6 +1792,12 @@ def main() -> int:
         return cmd_delete_page(args)
     elif args.command == "delete-orphaned-pages":
         return cmd_delete_orphaned_pages(args)
+    elif args.command == "pull-assignments":
+        return cmd_pull_assignments(args)
+    elif args.command == "push-assignments":
+        return cmd_push_assignments(args)
+    elif args.command == "assignment-status":
+        return cmd_assignment_status(args)
     elif args.command == "pull-quizzes":
         return cmd_pull_quizzes(args)
     elif args.command == "push-quizzes":
