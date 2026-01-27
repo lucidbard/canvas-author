@@ -91,21 +91,44 @@ def rewrite_canvas_links(content: str, course_id: str) -> Tuple[str, List[Dict[s
         content
     )
 
-    # Pattern 5: Page links WITHOUT api-endpoint (bare links that will break)
-    # Match: [text](page-name) or [text](./page-name.md)
-    # But NOT: [text](...){api-endpoint="..."} (already has Canvas metadata)
-    def rewrite_page(match):
+    # Pattern 5a: Page links WITH api-endpoint and .md extension
+    # Match: [text](./page-name.md){api-endpoint="...page-name.md"...}
+    # These need .md removed from BOTH the link AND the api-endpoint URL
+    def rewrite_page_with_api_endpoint(match):
         link_text = match.group(1)
-        page_name = match.group(2).replace('.md', '').replace('./', '')
+        page_name = match.group(3).replace('.md', '')  # Remove .md from page name
+        api_attrs = match.group(4)
+        old_link = match.group(0)
+
+        # Remove .md from api-endpoint URL as well
+        api_attrs_fixed = api_attrs.replace('.md"', '"')
+
+        # Reconstruct with Canvas path and fixed api-endpoint
+        new_link = f"[{link_text}](/courses/{course_id}/pages/{page_name}){api_attrs_fixed}"
+        rewrites.append({"type": "page_api", "old": old_link, "new": new_link})
+        return new_link
+
+    content = re.sub(
+        r'\[([^\]]+)\]\((\.\/)?([a-z0-9\-]+(?:\.md)?)\)(\{api-endpoint=[^}]+\})',
+        rewrite_page_with_api_endpoint,
+        content
+    )
+
+    # Pattern 5b: Page links WITHOUT api-endpoint (bare links that will break)
+    # Match: [text](page-name) or [text](./page-name.md) or [text](./page-name)
+    # But NOT if already rewritten above
+    def rewrite_page_bare(match):
+        link_text = match.group(1)
+        page_name = match.group(3).replace('.md', '')  # Remove .md if present
         old_link = match.group(0)
         new_link = f"[{link_text}](/courses/{course_id}/pages/{page_name})"
         rewrites.append({"type": "page", "old": old_link, "new": new_link})
         return new_link
 
-    # Only rewrite if NOT followed by {api-endpoint
+    # Match bare page links (no api-endpoint, no http://, no #)
     content = re.sub(
-        r'\[([^\]]+)\]\((\.\/)?([a-z0-9\-]+(?:\.md)?)\)(?!\{api-endpoint)',
-        rewrite_page,
+        r'\[([^\]]+)\]\((?!https?://|#)(\.\/)?([a-z0-9\-]+(?:\.md)?)\)(?!\{)',
+        rewrite_page_bare,
         content
     )
 
@@ -114,6 +137,7 @@ def rewrite_canvas_links(content: str, course_id: str) -> Tuple[str, List[Dict[s
                    f"{sum(1 for r in rewrites if r['type'] == 'quiz')} quizzes, "
                    f"{sum(1 for r in rewrites if r['type'] == 'assignment')} assignments, "
                    f"{sum(1 for r in rewrites if r['type'] == 'discussion')} discussions, "
-                   f"{sum(1 for r in rewrites if r['type'] == 'page')} pages")
+                   f"{sum(1 for r in rewrites if r['type'] == 'page')} bare pages, "
+                   f"{sum(1 for r in rewrites if r['type'] == 'page_api')} api-endpoint pages")
 
     return content, rewrites
