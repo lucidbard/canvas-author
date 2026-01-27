@@ -303,6 +303,7 @@ def add_module_item(
     title: Optional[str] = None,
     position: Optional[int] = None,
     indent: int = 0,
+    completion_requirement: Optional[Dict[str, Any]] = None,
     client: Optional[CanvasClient] = None,
     course=None
 ) -> Dict[str, Any]:
@@ -320,6 +321,8 @@ def add_module_item(
         title: Display title (required for SubHeader, ExternalUrl)
         position: Position within module
         indent: Indentation level (0-5)
+        completion_requirement: Dict with 'type' and optional 'min_score'
+                               Types: 'must_view', 'must_submit', 'must_contribute', 'min_score'
         client: Optional CanvasClient instance
         course: Optional cached course object
 
@@ -350,6 +353,8 @@ def add_module_item(
         item_data["title"] = title
     if position is not None:
         item_data["position"] = position
+    if completion_requirement is not None:
+        item_data["completion_requirement"] = completion_requirement
 
     item = module.create_module_item(module_item=item_data)
 
@@ -366,6 +371,7 @@ def update_module_item(
     indent: Optional[int] = None,
     external_url: Optional[str] = None,
     published: Optional[bool] = None,
+    completion_requirement: Optional[Dict[str, Any]] = None,
     client: Optional[CanvasClient] = None,
     course=None
 ) -> Dict[str, Any]:
@@ -381,6 +387,7 @@ def update_module_item(
         indent: New indentation level
         external_url: New URL (for ExternalUrl items)
         published: Publish state
+        completion_requirement: Dict with 'type' and optional 'min_score'
         client: Optional CanvasClient instance
         course: Optional cached course object
 
@@ -408,6 +415,8 @@ def update_module_item(
         update_data["external_url"] = external_url
     if published is not None:
         update_data["published"] = published
+    if completion_requirement is not None:
+        update_data["completion_requirement"] = completion_requirement
 
     if update_data:
         item = item.edit(module_item=update_data)

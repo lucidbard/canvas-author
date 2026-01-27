@@ -376,6 +376,10 @@ def _add_item_from_yaml(
     elif item_type == "subheader":
         kwargs["title"] = item.get("title", "")
 
+    # Add completion requirement if specified
+    if "completion_requirement" in item:
+        kwargs["completion_requirement"] = item["completion_requirement"]
+
     return add_module_item(**kwargs)
 
 

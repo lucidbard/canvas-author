@@ -15,6 +15,7 @@ from .pages import list_pages, get_page, create_page, update_page
 from canvas_common import parse_frontmatter, create_page_frontmatter, update_frontmatter
 from .files import download_images_from_content, upload_images_from_content
 from canvas_common import URLMismatchError
+from .link_rewriter import rewrite_canvas_links
 
 logger = logging.getLogger("canvas_author.sync")
 
@@ -252,6 +253,12 @@ def push_pages(
                     body, course_id, input_path, canvas, is_markdown=True
                 )
                 results["images_uploaded"] += len(uploaded)
+
+            # Rewrite internal Canvas links to absolute URLs
+            if body:
+                body, link_rewrites = rewrite_canvas_links(body, course_id)
+                if link_rewrites:
+                    logger.debug(f"Rewrote {len(link_rewrites)} links in {file_path.name}")
 
             if url in existing_pages:
                 if update_existing:

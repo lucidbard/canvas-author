@@ -13,6 +13,7 @@ from canvas_common import get_canvas_client, CanvasClient, sanitize_filename as 
 from .assignments import list_assignments, get_assignment
 from .pandoc import html_to_markdown, markdown_to_html, is_pandoc_available
 from .datetime_utils import convert_to_iso8601, convert_from_iso8601, convert_to_datetime
+from .link_rewriter import rewrite_canvas_links
 
 logger = logging.getLogger("canvas_author.assignment_sync")
 
@@ -324,6 +325,12 @@ def _create_assignment_from_markdown(
     """Create a new assignment from parsed markdown data."""
     course = client.get_course(course_id)
 
+    # Rewrite internal Canvas links before converting to HTML
+    if body:
+        body, link_rewrites = rewrite_canvas_links(body, course_id)
+        if link_rewrites:
+            logger.debug(f"Rewrote {len(link_rewrites)} links in new assignment")
+
     # Convert markdown body to HTML
     if body and is_pandoc_available():
         description_html = markdown_to_html(body)
@@ -517,6 +524,12 @@ def push_assignments(
                         "reason": "update_existing is false"
                     })
                     continue
+
+                # Rewrite internal Canvas links before converting to HTML
+                if body:
+                    body, link_rewrites = rewrite_canvas_links(body, course_id)
+                    if link_rewrites:
+                        logger.debug(f"Rewrote {len(link_rewrites)} links in {file_path.name}")
 
                 # Convert markdown body to HTML
                 if body and is_pandoc_available():
