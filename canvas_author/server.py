@@ -308,15 +308,24 @@ def validate_published_pages(course_id: str, published_only: bool = True) -> str
 
         # Fetch all pages from Canvas
         canvas_pages = {}
-        for page in course.get_pages():
-            if published_only and not page.published:
+        for page_summary in course.get_pages():
+            if published_only and not page_summary.published:
                 continue
-            canvas_pages[page.url] = {
-                'title': page.title,
-                'url': page.url,
-                'body': page.body or '',
-                'published': page.published
-            }
+
+            # Fetch full page content (get_pages() only returns summaries)
+            try:
+                page = course.get_page(page_summary.url)
+                body = getattr(page, "body", "") or ""
+
+                canvas_pages[page.url] = {
+                    'title': page.title,
+                    'url': page.url,
+                    'body': body,
+                    'published': page.published
+                }
+            except Exception as e:
+                logger.warning(f"Could not fetch page {page_summary.url}: {e}")
+                continue
 
         # Fetch valid Canvas resources
         valid_assignments = {str(a.id) for a in course.get_assignments()}
