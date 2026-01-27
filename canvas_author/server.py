@@ -221,7 +221,8 @@ def push_pages(
     create_missing: bool = True,
     update_existing: bool = True,
     upload_images: bool = True,
-    validate_links: bool = True
+    validate_links: bool = True,
+    allow_unpublish: bool = False
 ) -> str:
     """
     Push local markdown files to Canvas as wiki pages.
@@ -230,6 +231,9 @@ def push_pages(
     Validates internal links before pushing to prevent broken links on Canvas.
     If validation fails, returns an error without pushing any pages.
 
+    **SAFETY:** By default, will NOT unpublish already-published pages.
+    Set allow_unpublish=true to explicitly allow unpublishing pages.
+
     Args:
         course_id: Canvas course ID
         input_dir: Directory containing markdown files
@@ -237,12 +241,14 @@ def push_pages(
         update_existing: Update pages that already exist (default: true)
         upload_images: Upload local images to Canvas (default: true)
         validate_links: Validate internal links before pushing (default: true)
+        allow_unpublish: Allow unpublishing published pages (default: false for safety)
 
     Returns:
         JSON with results: created, updated, skipped, errors, images_uploaded, validation
 
     Raises:
         ValueError: If validate_links=true and broken links are found
+        ValueError: If trying to unpublish without allow_unpublish=true
     """
     try:
         result = sync.push_pages(
@@ -250,7 +256,8 @@ def push_pages(
             create_missing=create_missing,
             update_existing=update_existing,
             upload_images=upload_images,
-            validate_links=validate_links
+            validate_links=validate_links,
+            allow_unpublish=allow_unpublish
         )
         return json.dumps(result, indent=2)
     except Exception as e:
@@ -272,6 +279,144 @@ def sync_status(course_id: str, local_dir: str) -> str:
     try:
         result = sync.sync_status(course_id, local_dir)
         return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def validate_published_pages(course_id: str, published_only: bool = True) -> str:
+    """
+    Validate all links in published Canvas pages.
+
+    Fetches pages directly from Canvas and validates internal page links,
+    assignment links, quiz links, and discussion links. Shows what Canvas
+    actually has live, not local files.
+
+    Args:
+        course_id: Canvas course ID
+        published_only: Only check published pages (default: True)
+
+    Returns:
+        JSON with validation results: valid links, broken links, statistics
+    """
+    import re
+    from canvas_common.client import get_canvas_client
+
+    try:
+        client = get_canvas_client()
+        course = client.get_course(course_id)
+
+        # Fetch all pages from Canvas
+        canvas_pages = {}
+        for page in course.get_pages():
+            if published_only and not page.published:
+                continue
+            canvas_pages[page.url] = {
+                'title': page.title,
+                'url': page.url,
+                'body': page.body or '',
+                'published': page.published
+            }
+
+        # Fetch valid Canvas resources
+        valid_assignments = {str(a.id) for a in course.get_assignments()}
+        valid_quizzes = {str(q.id) for q in course.get_quizzes()}
+        valid_discussions = {str(d.id) for d in course.get_discussion_topics()}
+        valid_page_urls = set(canvas_pages.keys())
+
+        # Validate links
+        issues = []
+        valid_links = []
+
+        for page_url, page_data in canvas_pages.items():
+            body = page_data['body']
+
+            # Extract HTML links
+            link_pattern = r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]+)</a>'
+            for match in re.finditer(link_pattern, body):
+                href = match.group(1)
+                link_text = match.group(2)
+
+                # Check Canvas resource links
+                if href.startswith('http') and client.domain in href:
+                    resource_match = re.search(
+                        r'/courses/\d+/(assignments|quizzes|discussion_topics)/(\d+)',
+                        href
+                    )
+                    if resource_match:
+                        resource_type = resource_match.group(1)
+                        resource_id = resource_match.group(2)
+
+                        is_valid = (
+                            (resource_type == "assignments" and resource_id in valid_assignments) or
+                            (resource_type == "quizzes" and resource_id in valid_quizzes) or
+                            (resource_type == "discussion_topics" and resource_id in valid_discussions)
+                        )
+
+                        if is_valid:
+                            valid_links.append({
+                                'page': page_url,
+                                'page_title': page_data['title'],
+                                'url': href,
+                                'type': 'canvas_resource'
+                            })
+                        else:
+                            issues.append({
+                                'page': page_url,
+                                'page_title': page_data['title'],
+                                'url': href,
+                                'link_text': link_text,
+                                'reason': f"Canvas {resource_type[:-1]} ID {resource_id} does not exist"
+                            })
+                    continue
+
+                # Check internal page links
+                if not href.startswith('http'):
+                    clean_href = href
+                    if clean_href.startswith('/courses/'):
+                        page_match = re.search(r'/pages/([^/?#]+)', clean_href)
+                        if page_match:
+                            clean_href = page_match.group(1)
+
+                    if '#' in clean_href:
+                        clean_href = clean_href.split('#')[0]
+
+                    if clean_href and clean_href in valid_page_urls:
+                        valid_links.append({
+                            'page': page_url,
+                            'page_title': page_data['title'],
+                            'url': href,
+                            'target': clean_href,
+                            'type': 'internal_page'
+                        })
+                    elif clean_href:
+                        issues.append({
+                            'page': page_url,
+                            'page_title': page_data['title'],
+                            'url': href,
+                            'link_text': link_text,
+                            'target': clean_href,
+                            'reason': f"Target page '{clean_href}' does not exist"
+                        })
+
+        result = {
+            'course_id': course_id,
+            'pages_checked': len(canvas_pages),
+            'published_only': published_only,
+            'statistics': {
+                'total_links': len(valid_links) + len(issues),
+                'valid_links': len(valid_links),
+                'broken_links': len(issues),
+                'assignments_count': len(valid_assignments),
+                'quizzes_count': len(valid_quizzes),
+                'discussions_count': len(valid_discussions)
+            },
+            'valid_links': valid_links,
+            'issues': issues
+        }
+
+        return json.dumps(result, indent=2)
+
     except Exception as e:
         return json.dumps({"error": str(e)})
 

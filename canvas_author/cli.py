@@ -1738,6 +1738,8 @@ def main() -> int:
     push_parser.add_argument("--no-update-meta", action="store_true", help="Don't update local frontmatter after push")
     push_parser.add_argument("--force-rename", action="store_true",
                             help="Allow pushing when filename differs from Canvas-generated URL (will auto-rename files)")
+    push_parser.add_argument("--allow-unpublish", action="store_true",
+                            help="Allow unpublishing pages (SAFETY: defaults to false to prevent accidental unpublishing)")
 
     # create-page command
     create_page_parser = subparsers.add_parser("create-page", help="Create a new page on Canvas and local file")

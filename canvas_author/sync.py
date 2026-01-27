@@ -190,6 +190,7 @@ def push_pages(
     upload_images: bool = True,
     force_rename: bool = False,
     validate_links: bool = True,
+    allow_unpublish: bool = False,
     client: Optional[CanvasClient] = None
 ) -> Dict[str, Any]:
     """
@@ -204,6 +205,7 @@ def push_pages(
         force_rename: If True, allow pushing even when local URL won't match
                       Canvas-generated URL (will auto-rename local files)
         validate_links: If True, validate internal links before pushing (default: True)
+        allow_unpublish: If True, allow unpublishing published pages (default: False for safety)
         client: Optional CanvasClient instance
 
     Returns:
@@ -213,6 +215,7 @@ def push_pages(
     Raises:
         URLMismatchError: When local URL won't match Canvas URL and force_rename=False
         ValueError: When validate_links=True and broken links are found
+        ValueError: When trying to unpublish without allow_unpublish=True
     """
     canvas = client or get_canvas_client()
     input_path = Path(input_dir)
@@ -262,17 +265,38 @@ def push_pages(
 
             if url in existing_pages:
                 if update_existing:
+                    # Safety check: prevent accidental unpublishing
+                    canvas_published = existing_pages[url].get("published", True)
+                    local_published = published if isinstance(published, bool) else True
+
+                    if canvas_published and not local_published and not allow_unpublish:
+                        error_msg = (
+                            f"Cannot unpublish page '{url}' (title: '{title}'). "
+                            f"The page is currently published on Canvas but local file has published=false. "
+                            f"Set allow_unpublish=True to explicitly allow unpublishing."
+                        )
+                        logger.error(error_msg)
+                        results["errors"].append({
+                            "url": url,
+                            "file": str(file_path),
+                            "error": error_msg
+                        })
+                        continue
+
                     update_page(
                         course_id=course_id,
                         page_url=url,
                         title=title,
                         body=body,
                         from_markdown=True,
-                        published=published if isinstance(published, bool) else True,
+                        published=local_published,
                         client=canvas,
                     )
                     results["updated"].append({"url": url, "file": str(file_path)})
-                    logger.info(f"Updated page '{url}' from {file_path}")
+                    if canvas_published and not local_published:
+                        logger.warning(f"Unpublished page '{url}' from {file_path}")
+                    else:
+                        logger.info(f"Updated page '{url}' from {file_path}")
                 else:
                     results["skipped"].append({"url": url, "reason": "exists, update disabled"})
             else:
