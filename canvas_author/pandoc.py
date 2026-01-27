@@ -8,6 +8,7 @@ Canvas LMS strips <style> tags, so styles are inlined directly on elements.
 import subprocess
 import logging
 import shutil
+import re
 from typing import Optional, Dict
 
 logger = logging.getLogger("canvas_author.pandoc")
@@ -112,7 +113,17 @@ def html_to_markdown(html: str, wrap: Optional[int] = None) -> str:
             text=True,
             check=True,
         )
-        return result.stdout
+        markdown = result.stdout
+
+        # Clean up Canvas-specific link attributes
+        # Remove {api-endpoint="..." api-returntype="..." course-type="..." published="..."}
+        markdown = re.sub(
+            r'\{[^}]*api-endpoint="[^"]*"[^}]*\}',
+            '',
+            markdown
+        )
+
+        return markdown
     except subprocess.CalledProcessError as e:
         logger.error(f"Pandoc conversion failed: {e.stderr}")
         raise RuntimeError(f"Pandoc conversion failed: {e.stderr}")
