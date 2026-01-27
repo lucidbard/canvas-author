@@ -278,6 +278,26 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     print(f"Found {len(md_files)} markdown files")
 
+    # Validate links before pushing
+    print("Validating internal links...")
+    try:
+        from canvas_common.validation import validate_links, format_validation_report
+        validation_result = validate_links(str(directory))
+
+        if validation_result["issues"]:
+            # Format a helpful error message
+            report = format_validation_report(validation_result)
+            print(f"\n❌ Link validation failed with {len(validation_result['issues'])} issue(s):\n")
+            print(report)
+            print("\nFix broken links before pushing to Canvas.")
+            return 1
+
+        print(f"✓ All {len(validation_result['valid'])} internal links valid")
+    except ImportError:
+        print("⚠ Warning: Link validation unavailable (canvas_common.validation not found)")
+    except Exception as e:
+        print(f"⚠ Warning: Link validation failed: {e}")
+
     # Check for changed files using mtime vs Canvas updated_at
     use_change_detection = False
     changed_files = set()
