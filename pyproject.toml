@@ -24,13 +24,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "canvas-common>=0.1.0",
+    "canvas-common",
     "canvasapi>=3.0.0",
     "mcp>=1.0.0",
     "python-dotenv>=1.0.0",
     "PyYAML>=6.0",
     "premailer>=3.10.0",
 ]
+
+[tool.uv.sources]
+canvas-common = { workspace = true }
 
 [project.optional-dependencies]
 dev = [

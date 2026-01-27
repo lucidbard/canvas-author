@@ -2536,40 +2536,38 @@ def main():
     import sys
     import os
 
-    # Determine transport mode from command line or environment
-    # Default to streamable-http for shared server architecture
-    transport = os.getenv("MCP_TRANSPORT", "streamable-http")
+    # Use Streamable HTTP transport (FastMCP uses "streamable-http")
+    # Note: In Claude Code CLI, this is called "http" transport
+    # See: https://modelcontextprotocol.io/docs/concepts/transports
+    transport = "streamable-http"
 
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--stdio":
-            transport = "stdio"
-        elif sys.argv[1] == "--http":
-            transport = "streamable-http"
-        elif sys.argv[1] == "--help":
-            print("Canvas MCP Server")
-            print()
-            print("Usage: python -m canvas_author.server [--stdio|--http]")
-            print()
-            print("Options:")
-            print("  --stdio    Run in stdio mode (for Claude Code MCP client)")
-            print("  --http     Run in streamable-http mode (default, for shared server)")
-            print()
-            print("Environment Variables:")
-            print("  MCP_TRANSPORT     Set transport mode: 'stdio' or 'streamable-http'")
-            print("  CANVAS_DOMAIN     Canvas LMS domain (e.g., 'canvas.instructure.com')")
-            print("  CANVAS_API_TOKEN  Canvas API token")
-            print("  FASTMCP_HOST      HTTP server host (default: 127.0.0.1)")
-            print("  FASTMCP_PORT      HTTP server port (default: 8000)")
-            print()
-            return
+    # Get server configuration from environment
+    # FastMCP uses these environment variables for HTTP config
+    host = os.getenv("FASTMCP_HOST", "127.0.0.1")
+    port = int(os.getenv("FASTMCP_PORT", "8000"))
 
-    if transport == "streamable-http":
-        host = os.getenv("FASTMCP_HOST", "127.0.0.1")
-        port = int(os.getenv("FASTMCP_PORT", "8000"))
-        print(f"Starting Canvas MCP Server in HTTP mode...")
-        print(f"Server URL: http://{host}:{port}/mcp")
-    else:
-        print("Starting Canvas MCP Server in stdio mode...")
+    if len(sys.argv) > 1 and sys.argv[1] == "--help":
+        print("Canvas MCP Server")
+        print()
+        print("Usage: python -m canvas_author.server")
+        print()
+        print("Transport: Streamable HTTP (2025+ MCP specification)")
+        print()
+        print("Environment Variables:")
+        print("  CANVAS_DOMAIN     Canvas LMS domain (e.g., 'canvas.instructure.com')")
+        print("  CANVAS_API_TOKEN  Canvas API token")
+        print("  FASTMCP_HOST      HTTP server host (default: 127.0.0.1)")
+        print("  FASTMCP_PORT      HTTP server port (default: 8000)")
+        print()
+        print(f"Default server URL: http://{host}:{port}/mcp")
+        print()
+        return
+
+    print(f"Starting Canvas MCP Server (Streamable HTTP)...")
+    print(f"Server URL: http://{host}:{port}/mcp")
+    print(f"Transport: streamable-http (FastMCP)")
+    print(f"Note: In Claude Code CLI, use --transport http")
+    print()
 
     print()
     print("Tools: list_pages, get_page, create_page, update_page, delete_page,")
