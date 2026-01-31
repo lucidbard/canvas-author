@@ -131,7 +131,7 @@ def pull_pages(
     results = {"pulled": [], "skipped": [], "errors": [], "images_downloaded": 0}
 
     # Get domain for URL matching
-    domain = canvas.api_url.replace("https://", "").replace("http://", "").rstrip("/")
+    domain = canvas.domain
 
     for page_meta in pages:
         try:
@@ -249,6 +249,16 @@ def push_pages(
             url = metadata.get("canvas_url") or metadata.get("url") or file_path.stem
             title = metadata.get("title") or file_path.stem.replace("-", " ").title()
             published = metadata.get("published", True)
+
+            # Skip files marked as local_only (three-tier publishing: local -> unpublished -> published)
+            if metadata.get("local_only", False):
+                results["skipped"].append({
+                    "url": url,
+                    "file": str(file_path),
+                    "reason": "marked as local_only"
+                })
+                logger.debug(f"Skipping local_only file: {file_path}")
+                continue
 
             # Upload images and rewrite URLs to Canvas paths
             if upload_images and body:
@@ -408,11 +418,22 @@ def sync_status(
 
     # Get local files
     local_files = {}
+    local_only_files = []  # Files marked with local_only: true (won't sync)
     if local_path.exists():
         for file_path in local_path.glob("*.md"):
             content = file_path.read_text(encoding="utf-8")
             metadata, body = parse_frontmatter(content)
             url = metadata.get("canvas_url") or metadata.get("url") or file_path.stem
+
+            # Track local_only files separately
+            if metadata.get("local_only", False):
+                local_only_files.append({
+                    "url": url,
+                    "file": str(file_path),
+                    "title": metadata.get("title", file_path.stem),
+                })
+                continue
+
             local_files[url] = {
                 "file": str(file_path),
                 "metadata": metadata,
@@ -425,10 +446,12 @@ def sync_status(
     status = {
         "canvas_only": [],
         "local_only": [],
+        "local_only_flagged": local_only_files,  # Files with local_only: true
         "both": [],
         "summary": {
             "total_canvas": len(canvas_pages),
             "total_local": len(local_files),
+            "total_local_only_flagged": len(local_only_files),
             "in_sync": 0,
             "canvas_only": 0,
             "local_only": 0,

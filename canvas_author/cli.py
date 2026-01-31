@@ -363,6 +363,12 @@ def cmd_push(args: argparse.Namespace) -> int:
                 skipped += 1
                 continue
 
+            # Skip files marked as local_only (three-tier publishing: local -> unpublished -> published)
+            if metadata.get("local_only", False):
+                print(f"  - {relative_path}: local_only, skipping")
+                skipped += 1
+                continue
+
             # Determine page URL and title
             # Prefer canvas_url (Canvas-generated) over url (legacy) or filename
             url = metadata.get("canvas_url") or metadata.get("url") or file_path.stem
